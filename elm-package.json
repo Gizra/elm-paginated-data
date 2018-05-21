@@ -1,6 +1,6 @@
 {
     "version": "0.1.0",
-    "summary": "Fetch and view paginated data",
+    "summary": "Fetch and view paginated data.",
     "repository": "https://github.com/Gizra/elm-paginated-data.git",
     "license": "BSD3",
     "source-directories": [
