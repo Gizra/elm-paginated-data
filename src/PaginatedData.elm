@@ -106,6 +106,143 @@ fetchPaginated ( backendIndentifier, backendDict ) ( pageIdentifier, pageDict ) 
         []
 
 
+
+-- CRUD
+
+
+{-| Insert multiple Items into the data and pager dict.
+-}
+insertMultipletoDataAndPager identifier pageNumber webdata emptyDataAndPager defaultItemFunc getItemFunc insertFunc insertAfterFunc dict =
+    let
+        existing =
+            EveryDict.get identifier dict
+                |> Maybe.withDefault (RemoteData.Success emptyDataAndPager)
+
+        existingDataAndPager =
+            existing
+                |> RemoteData.toMaybe
+                |> Maybe.withDefault emptyDataAndPager
+    in
+    case webdata of
+        RemoteData.Success ( items, totalCount ) ->
+            let
+                maybePreviousItemLastUuid =
+                    if pageNumber > 1 then
+                        List.foldl
+                            (\index accum ->
+                                let
+                                    pagerInfo =
+                                        EveryDict.get (pageNumber - 1) existingDataAndPager.pager
+                                            |> Maybe.andThen RemoteData.toMaybe
+                                in
+                                case accum of
+                                    Just val ->
+                                        accum
+
+                                    Nothing ->
+                                        case pagerInfo of
+                                            Nothing ->
+                                                accum
+
+                                            Just pagerInfo ->
+                                                Just <| Tuple.second pagerInfo
+                            )
+                            Nothing
+                            (List.reverse <| List.range 1 (pageNumber - 1))
+                    else
+                        -- This is the first page, so there's nothing before it.
+                        Nothing
+
+                itemsUpdated =
+                    case maybePreviousItemLastUuid of
+                        Nothing ->
+                            if totalCount == 0 then
+                                -- No items with placed bid.
+                                EveryDictList.empty
+                            else
+                                -- This is the first page, we can enter by order.
+                                EveryDictList.foldl
+                                    insertFunc
+                                    existingDataAndPager.data
+                                    items
+
+                        Just previousItemLastUuid ->
+                            -- This page is after the previous one. As we know the last
+                            -- item from the previous page, we'll have to reverse to new items
+                            -- so they will end up correctly.
+                            -- That is, if we had these existing items key [1, 2, 3]
+                            -- we know that 3 is the last item. So, if we have the new items
+                            -- [4, 5, 6] we will reverse them and enter one by one
+                            -- [1, 2, 3, 6]. This looks wrong, but since we keep pushing after 3
+                            -- the next item will result with [1, 2, 3, 5, 6] and the process
+                            -- will end as expected with [1, 2, 3, 4, 5, 6].
+                            EveryDictList.foldl
+                                insertAfterFunc
+                                ( previousItemLastUuid, existingDataAndPager.data )
+                                (EveryDictList.reverse items)
+                                |> Tuple.second
+
+                totalItems =
+                    EveryDictList.size items
+
+                totalPages =
+                    -- For example if we have 120 items, and we got 25 items back
+                    -- it means there will be 5 pages.
+                    (toFloat totalCount / toFloat totalItems)
+                        |> ceiling
+
+                -- Get the first and last item, which might be the same one, in case
+                -- we have a single item.
+                ( firstItem, lastItem ) =
+                    ( items
+                        |> EveryDictList.getAt 0
+                        |> Maybe.andThen getItemFunc
+                        |> Maybe.withDefault (defaultItemFunc 0)
+                    , items
+                        -- If we have 25 items, the last one will be in index 24.
+                        |> EveryDictList.getAt (totalItems - 1)
+                        |> Maybe.andThen getItemFunc
+                        |> Maybe.withDefault (defaultItemFunc 0)
+                    )
+
+                pagerUpdated =
+                    if totalCount == 0 then
+                        -- Update the pager, so we won't continue fetching.
+                        EveryDict.insert pageNumber (RemoteData.Success ( firstItem, lastItem )) existingDataAndPager.pager
+                    else if EveryDict.size existingDataAndPager.pager <= 1 then
+                        -- If the pager dict was not built yet, or we just have the
+                        -- first page `Loading` - before we knew how many items we'll
+                        -- have in total.
+                        List.range 1 totalPages
+                            |> List.foldl
+                                (\index accum ->
+                                    let
+                                        value =
+                                            if index == pageNumber then
+                                                RemoteData.Success ( firstItem, lastItem )
+                                            else
+                                                RemoteData.NotAsked
+                                    in
+                                    EveryDict.insert index value accum
+                                )
+                                EveryDict.empty
+                    else
+                        -- Update the existing pager dict.
+                        EveryDict.insert pageNumber (RemoteData.Success ( firstItem, lastItem )) existingDataAndPager.pager
+
+                existingDataAndPagerUpdated =
+                    { existingDataAndPager | data = itemsUpdated, pager = pagerUpdated }
+            in
+            EveryDict.insert identifier (RemoteData.Success existingDataAndPagerUpdated) dict
+
+        RemoteData.Failure error ->
+            EveryDict.insert identifier (RemoteData.Failure error) dict
+
+        _ ->
+            -- Satisfy the compiler.
+            dict
+
+
 {-| View helper.
 -}
 viewPager :
