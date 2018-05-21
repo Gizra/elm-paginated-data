@@ -62,12 +62,11 @@ module.
 
 -}
 fetchPaginated :
-    ( b, EveryDict b (RemoteData.RemoteData e { c | pager : EveryDict number (RemoteData.RemoteData e1 a) }) )
-    -> ( d, EveryDict d number1 )
-    -> { c | pager : EveryDict number (RemoteData.RemoteData e1 a) }
-    -> (number2 -> f)
-    -> List (Maybe f)
-fetchPaginated ( backendIndentifier, backendDict ) ( pageIdentifier, pageDict ) emptyDataAndPager func =
+    ( a, EveryDict a (WebData (PaginatedData key value)) )
+    -> ( b, EveryDict b number )
+    -> (number1 -> c)
+    -> List (Maybe c)
+fetchPaginated ( backendIndentifier, backendDict ) ( pageIdentifier, pageDict ) func =
     let
         existingData =
             EveryDict.get backendIndentifier backendDict
@@ -76,7 +75,7 @@ fetchPaginated ( backendIndentifier, backendDict ) ( pageIdentifier, pageDict ) 
         existingDataAndPager =
             existingData
                 |> RemoteData.toMaybe
-                |> Maybe.withDefault emptyDataAndPager
+                |> Maybe.withDefault emptyPaginatedData
 
         currentPage =
             EveryDict.get pageIdentifier pageDict
@@ -121,7 +120,7 @@ get :
     -> key
     -> EveryDict identifier (WebData (PaginatedData key value))
     -> Maybe value
-get identifier entityId dict =
+get identifier key dict =
     let
         existing =
             EveryDict.get identifier dict
@@ -132,7 +131,7 @@ get identifier entityId dict =
                 |> RemoteData.toMaybe
                 |> Maybe.withDefault emptyPaginatedData
     in
-    EveryDictList.get entityId dataAndPager.data
+    EveryDictList.get key dataAndPager.data
 
 
 {-| Update a single value.
@@ -143,7 +142,7 @@ update :
     -> (value -> value)
     -> EveryDict identifier (WebData (PaginatedData key value))
     -> EveryDict identifier (WebData (PaginatedData key value))
-update identifier entityId func dict =
+update identifier key func dict =
     let
         existing =
             EveryDict.get identifier dict
@@ -154,17 +153,17 @@ update identifier entityId func dict =
                 |> RemoteData.toMaybe
                 |> Maybe.withDefault emptyPaginatedData
     in
-    case EveryDictList.get entityId dataAndPager.data of
+    case EveryDictList.get key dataAndPager.data of
         Nothing ->
             dict
 
-        Just editable ->
+        Just value ->
             let
-                editableUpdated =
-                    func editable
+                valueUpdated =
+                    func value
 
                 dataAndPagerUpdated =
-                    { dataAndPager | data = EveryDictList.insert entityId editableUpdated dataAndPager.data }
+                    { dataAndPager | data = EveryDictList.insert key valueUpdated dataAndPager.data }
             in
             EveryDict.insert identifier (RemoteData.Success dataAndPagerUpdated) dict
 
