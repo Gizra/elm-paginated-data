@@ -4,14 +4,18 @@ module PaginatedData
         , PaginatedData
         , emptyPaginatedData
         , fetchPaginated
+        , get
         , getItemsByPager
+        , insertMultiple
+        , setPageAsLoading
+        , update
         , viewPager
         )
 
 {-| A `PaginatedData` represents a dict of values, that are paginated on the
 server.
 
-@docs ContainerDict, PaginatedData, emptyPaginatedData, fetchPaginated, getItemsByPager, viewPager
+@docs ContainerDict, PaginatedData, emptyPaginatedData, fetchPaginated, get, getItemsByPager, insertMultiple, setPageAsLoading, update, viewPager
 
 -}
 
@@ -108,20 +112,117 @@ fetchPaginated ( backendIndentifier, backendDict ) ( pageIdentifier, pageDict ) 
 
 
 -- CRUD
+-- get : identifier -> key -> dict -> Maybe value
 
 
-{-| Insert multiple Items into the data and pager dict.
+{-| Get a single value.
 -}
-insertMultipletoDataAndPager identifier pageNumber webdata emptyDataAndPager defaultItemFunc getItemFunc insertFunc insertAfterFunc dict =
+get :
+    a
+    -> key
+    -> EveryDict a (RemoteData.RemoteData e (PaginatedData key value))
+    -> Maybe value
+get identifier entityId dict =
     let
         existing =
             EveryDict.get identifier dict
-                |> Maybe.withDefault (RemoteData.Success emptyDataAndPager)
+                |> Maybe.withDefault (RemoteData.Success emptyPaginatedData)
+
+        dataAndPager =
+            existing
+                |> RemoteData.toMaybe
+                |> Maybe.withDefault emptyPaginatedData
+    in
+    EveryDictList.get entityId dataAndPager.data
+
+
+
+-- update : identifier -> key -> (value -> value) -> dict -> dict
+
+
+{-| Update a single value.
+-}
+update :
+    a
+    -> b
+    -> (c -> c)
+    -> EveryDict a (RemoteData.RemoteData e (PaginatedData b c))
+    -> EveryDict a (RemoteData.RemoteData e (PaginatedData b c))
+update identifier entityId func dict =
+    let
+        existing =
+            EveryDict.get identifier dict
+                |> Maybe.withDefault (RemoteData.Success emptyPaginatedData)
+
+        dataAndPager =
+            existing
+                |> RemoteData.toMaybe
+                |> Maybe.withDefault emptyPaginatedData
+    in
+    case EveryDictList.get entityId dataAndPager.data of
+        Nothing ->
+            dict
+
+        Just editable ->
+            let
+                editableUpdated =
+                    func editable
+
+                dataAndPagerUpdated =
+                    { dataAndPager | data = EveryDictList.insert entityId editableUpdated dataAndPager.data }
+            in
+            EveryDict.insert identifier (RemoteData.Success dataAndPagerUpdated) dict
+
+
+{-| Used to indicate we're loading a page for the first time.
+-}
+setPageAsLoading :
+    a
+    -> Int
+    -> EveryDict a (RemoteData.RemoteData e (PaginatedData key value))
+    -> EveryDict a (RemoteData.RemoteData e (PaginatedData key value))
+setPageAsLoading identifier pageNumber dict =
+    let
+        existing =
+            EveryDict.get identifier dict
+                |> Maybe.withDefault (RemoteData.Success emptyPaginatedData)
 
         existingDataAndPager =
             existing
                 |> RemoteData.toMaybe
-                |> Maybe.withDefault emptyDataAndPager
+                |> Maybe.withDefault emptyPaginatedData
+
+        pagerUpdated =
+            EveryDict.insert pageNumber RemoteData.Loading existingDataAndPager.pager
+
+        existingDataAndPagerUpdated =
+            { existingDataAndPager | pager = pagerUpdated }
+    in
+    EveryDict.insert identifier (RemoteData.Success existingDataAndPagerUpdated) dict
+
+
+{-| Insert multiple Items into the data and pager dict.
+-}
+insertMultiple :
+    a
+    -> Int
+    -> RemoteData.RemoteData e ( EveryDictList k v, Int )
+    -> (number -> a1)
+    -> (( k, v ) -> Maybe a1)
+    -> (k -> v -> EveryDictList a1 value -> EveryDictList a1 value)
+    -> (k -> v -> ( a1, EveryDictList a1 value ) -> ( a1, EveryDictList a1 value ))
+    -> EveryDict a (RemoteData.RemoteData e (PaginatedData a1 value))
+    -> EveryDict a (RemoteData.RemoteData e (PaginatedData a1 value))
+insertMultiple identifier pageNumber webdata defaultItemFunc getItemFunc insertFunc insertAfterFunc dict =
+    let
+        existing =
+            EveryDict.get identifier dict
+                |> Maybe.withDefault (RemoteData.Success emptyPaginatedData)
+
+        existingDataAndPager =
+            existing
+                |> RemoteData.toMaybe
+                |> Maybe.withDefault emptyPaginatedData
     in
     case webdata of
         RemoteData.Success ( items, totalCount ) ->
