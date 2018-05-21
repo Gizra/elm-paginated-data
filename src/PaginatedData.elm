@@ -1,6 +1,7 @@
 module PaginatedData
     exposing
-        ( PaginatedData
+        ( ContainerDict
+        , PaginatedData
         , emptyPaginatedData
         , fetchPaginated
         , getItemsByPager
@@ -10,7 +11,7 @@ module PaginatedData
 {-| A `PaginatedData` represents a dict of values, that are paginated on the
 server.
 
-@docs PaginatedData, emptyPaginatedData, fetchPaginated, getItemsByPager, viewPager
+@docs ContainerDict, PaginatedData, emptyPaginatedData, fetchPaginated, getItemsByPager, viewPager
 
 -}
 
@@ -20,6 +21,15 @@ import Html exposing (Html, a, li, text, ul)
 import Html.Attributes exposing (action, class, classList)
 import Html.Events exposing (onClick)
 import RemoteData exposing (WebData)
+
+
+{-| A container Dict can act as a local cache.
+
+@todo: Add docs.
+
+-}
+type alias ContainerDict identifier key value =
+    EveryDict identifier (WebData (PaginatedData key value))
 
 
 {-| We need to know how much pages we have so we could lazy load.
