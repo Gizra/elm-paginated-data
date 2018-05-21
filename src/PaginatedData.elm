@@ -112,15 +112,14 @@ fetchPaginated ( backendIndentifier, backendDict ) ( pageIdentifier, pageDict ) 
 
 
 -- CRUD
--- get : identifier -> key -> dict -> Maybe value
 
 
 {-| Get a single value.
 -}
 get :
-    a
+    identifier
     -> key
-    -> EveryDict a (RemoteData.RemoteData e (PaginatedData key value))
+    -> EveryDict identifier (WebData (PaginatedData key value))
     -> Maybe value
 get identifier entityId dict =
     let
@@ -136,18 +135,14 @@ get identifier entityId dict =
     EveryDictList.get entityId dataAndPager.data
 
 
-
--- update : identifier -> key -> (value -> value) -> dict -> dict
-
-
 {-| Update a single value.
 -}
 update :
-    a
-    -> b
-    -> (c -> c)
-    -> EveryDict a (RemoteData.RemoteData e (PaginatedData b c))
-    -> EveryDict a (RemoteData.RemoteData e (PaginatedData b c))
+    identifier
+    -> key
+    -> (value -> value)
+    -> EveryDict identifier (WebData (PaginatedData key value))
+    -> EveryDict identifier (WebData (PaginatedData key value))
 update identifier entityId func dict =
     let
         existing =
@@ -177,10 +172,10 @@ update identifier entityId func dict =
 {-| Used to indicate we're loading a page for the first time.
 -}
 setPageAsLoading :
-    a
+    identifier
     -> Int
-    -> EveryDict a (RemoteData.RemoteData e (PaginatedData key value))
-    -> EveryDict a (RemoteData.RemoteData e (PaginatedData key value))
+    -> EveryDict identifier (WebData (PaginatedData key value))
+    -> EveryDict identifier (WebData (PaginatedData key value))
 setPageAsLoading identifier pageNumber dict =
     let
         existing =
@@ -204,15 +199,15 @@ setPageAsLoading identifier pageNumber dict =
 {-| Insert multiple Items into the data and pager dict.
 -}
 insertMultiple :
-    a
+    identifier
     -> Int
     -> RemoteData.RemoteData e ( EveryDictList k v, Int )
     -> (number -> a1)
     -> (( k, v ) -> Maybe a1)
     -> (k -> v -> EveryDictList a1 value -> EveryDictList a1 value)
     -> (k -> v -> ( a1, EveryDictList a1 value ) -> ( a1, EveryDictList a1 value ))
-    -> EveryDict a (RemoteData.RemoteData e (PaginatedData a1 value))
-    -> EveryDict a (RemoteData.RemoteData e (PaginatedData a1 value))
+    -> EveryDict identifier (RemoteData.RemoteData e (PaginatedData a1 value))
+    -> EveryDict identifier (RemoteData.RemoteData e (PaginatedData a1 value))
 insertMultiple identifier pageNumber webdata defaultItemFunc getItemFunc insertFunc insertAfterFunc dict =
     let
         existing =
