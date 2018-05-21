@@ -7,6 +7,13 @@ module PaginatedData
         , viewPager
         )
 
+{-| A `PaginatedData` represents a dict of values, that are paginated on the
+server.
+
+@docs PaginatedData, emptyPaginatedData, fetchPaginated, getItemsByPager, viewPager
+
+-}
+
 import EveryDict exposing (EveryDict)
 import EveryDictList exposing (EveryDictList)
 import Html exposing (Html, a, li, text, ul)
@@ -25,6 +32,8 @@ type alias PaginatedData key value =
     }
 
 
+{-| Empty data, that has not been fetched yet.
+-}
 emptyPaginatedData : PaginatedData key value
 emptyPaginatedData =
     { data = EveryDictList.empty
@@ -33,7 +42,17 @@ emptyPaginatedData =
 
 
 {-| Fetch helper.
+
+@todo: Move <https://github.com/Gizra/elm-essentials/blob/4df1aba4ca15f52552e0ceca34495661826a9a4c/src/Gizra/Update.elm#L1> to own
+module.
+
 -}
+fetchPaginated :
+    ( b, EveryDict b (RemoteData.RemoteData e { c | pager : EveryDict number (RemoteData.RemoteData e1 a) }) )
+    -> ( d, EveryDict d number1 )
+    -> { c | pager : EveryDict number (RemoteData.RemoteData e1 a) }
+    -> (number2 -> f)
+    -> List (Maybe f)
 fetchPaginated ( backendIndentifier, backendDict ) ( pageIdentifier, pageDict ) emptyDataAndPager func =
     let
         existingData =
@@ -115,6 +134,8 @@ viewPager identifier { pager } pageProperty func =
             )
 
 
+{-| Get localy Items from the dict, by their page number.
+-}
 getItemsByPager :
     identifier
     ->
