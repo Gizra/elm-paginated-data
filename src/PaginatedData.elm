@@ -3,6 +3,7 @@ module PaginatedData
         ( ContainerDict
         , PaginatedData
         , emptyPaginatedData
+        , fetchAll
         , fetchPaginated
         , get
         , getItemsByPager
@@ -15,7 +16,7 @@ module PaginatedData
 {-| A `PaginatedData` represents a dict of values, that are paginated on the
 server.
 
-@docs ContainerDict, PaginatedData, emptyPaginatedData, fetchPaginated, get, getItemsByPager, insertMultiple, setPageAsLoading, update, viewPager
+@docs ContainerDict, PaginatedData, emptyPaginatedData, fetchAll, fetchPaginated, get, getItemsByPager, insertMultiple, setPageAsLoading, update, viewPager
 
 -}
 
@@ -64,7 +65,7 @@ module.
 fetchPaginated :
     ( a, EveryDict a (WebData (PaginatedData key value)) )
     -> ( b, EveryDict b number )
-    -> (number1 -> c)
+    -> (Int -> c)
     -> List (Maybe c)
 fetchPaginated ( backendIndentifier, backendDict ) ( pageIdentifier, pageDict ) func =
     let
@@ -79,6 +80,68 @@ fetchPaginated ( backendIndentifier, backendDict ) ( pageIdentifier, pageDict ) 
 
         currentPage =
             EveryDict.get pageIdentifier pageDict
+                |> Maybe.withDefault 1
+
+        currentPageData =
+            EveryDict.get currentPage existingDataAndPager.pager
+                |> Maybe.withDefault RemoteData.NotAsked
+
+        hasNextPage =
+            EveryDict.member (currentPage + 1) existingDataAndPager.pager
+
+        nextPageData =
+            EveryDict.get (currentPage + 1) existingDataAndPager.pager
+                |> Maybe.withDefault RemoteData.NotAsked
+
+        -- Prevent endless fetching in case the previous request has ended with `Failure`.
+        isPreviousRequestFailed =
+            EveryDict.get backendIndentifier backendDict
+                |> Maybe.withDefault RemoteData.NotAsked
+                |> RemoteData.isFailure
+    in
+    if not isPreviousRequestFailed then
+        if RemoteData.isNotAsked currentPageData then
+            [ Just <| func currentPage ]
+        else if hasNextPage && RemoteData.isNotAsked nextPageData then
+            [ Just <| func (currentPage + 1) ]
+        else
+            []
+    else
+        []
+
+
+{-| Fetch all existing pages.
+
+Next page is fetched as the previous one arrives successfully.
+
+-}
+fetchAll :
+    ( a, EveryDict a (WebData (PaginatedData key value)) )
+    -> (Int -> c)
+    -> List (Maybe c)
+fetchAll ( backendIndentifier, backendDict ) func =
+    let
+        existingData =
+            EveryDict.get backendIndentifier backendDict
+                |> Maybe.withDefault RemoteData.NotAsked
+
+        existingDataAndPager =
+            existingData
+                |> RemoteData.toMaybe
+                |> Maybe.withDefault emptyPaginatedData
+
+        -- Current page is actually the last page that had a successful
+        -- response.
+        currentPage =
+            existingDataAndPager.pager
+                |> EveryDict.toList
+                -- Keep only successs values.
+                |> List.filter (\( _, webData ) -> RemoteData.isSuccess webData)
+                -- Sort the list by page number, and get the highest value.
+                |> List.sortBy (\( pageNumber, _ ) -> pageNumber)
+                |> List.reverse
+                |> List.head
+                |> Maybe.andThen (\( pageNumber, _ ) -> Just pageNumber)
                 |> Maybe.withDefault 1
 
         currentPageData =
