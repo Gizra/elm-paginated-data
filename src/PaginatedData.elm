@@ -7,6 +7,7 @@ module PaginatedData
         , fetchPaginated
         , get
         , getItemsByPager
+        , insertDirectlyFromClient
         , insertMultiple
         , setPageAsLoading
         , update
@@ -16,7 +17,7 @@ module PaginatedData
 {-| A `PaginatedData` represents a dict of values, that are paginated on the
 server.
 
-@docs ContainerDict, PaginatedData, emptyPaginatedData, fetchAll, fetchPaginated, get, getItemsByPager, insertMultiple, setPageAsLoading, update, viewPager
+@docs ContainerDict, PaginatedData, emptyPaginatedData, fetchAll, fetchPaginated, get, getItemsByPager, insertDirectlyFromClient, insertMultiple, setPageAsLoading, update, viewPager
 
 -}
 
@@ -44,6 +45,10 @@ it's easier to insert new items in the correct place.
 type alias PaginatedData key value =
     { data : EveryDictList key value
     , pager : EveryDict Int (WebData ( key, key ))
+
+    -- We keep the total count, so if we are asked to `fetchAll`, we can
+    -- calcualte how many pages we'll have based on the first page's result count.
+    , totalCount : Int
     }
 
 
@@ -53,6 +58,7 @@ emptyPaginatedData : PaginatedData key value
 emptyPaginatedData =
     { data = EveryDictList.empty
     , pager = EveryDict.empty
+    , totalCount = 0
     }
 
 
@@ -151,6 +157,9 @@ fetchAll ( backendIndentifier, backendDict ) func =
         hasNextPage =
             EveryDict.member (currentPage + 1) existingDataAndPager.pager
 
+        -- If we haven't fetched all Items, so there need to be a next page.
+        -- @todo: Fix, after we get correct count.
+        -- || (EveryDictList.size existingDataAndPager.data < existingDataAndPager.totalCount)
         nextPageData =
             EveryDict.get (currentPage + 1) existingDataAndPager.pager
                 |> Maybe.withDefault RemoteData.NotAsked
@@ -389,7 +398,11 @@ insertMultiple identifier pageNumber webdata defaultItemFunc getItemFunc insertF
                         EveryDict.insert pageNumber (RemoteData.Success ( firstItem, lastItem )) existingDataAndPager.pager
 
                 existingDataAndPagerUpdated =
-                    { existingDataAndPager | data = itemsUpdated, pager = pagerUpdated }
+                    { existingDataAndPager
+                        | data = itemsUpdated
+                        , pager = pagerUpdated
+                        , totalCount = totalCount
+                    }
             in
             EveryDict.insert identifier (RemoteData.Success existingDataAndPagerUpdated) dict
 
@@ -399,6 +412,63 @@ insertMultiple identifier pageNumber webdata defaultItemFunc getItemFunc insertF
         _ ->
             -- Satisfy the compiler.
             dict
+
+
+{-| @todo: Add docs, and improve
+-}
+insertDirectlyFromClient :
+    identifier
+    -> ( key, value )
+    -> EveryDict identifier (WebData (PaginatedData key value))
+    -> EveryDict identifier (WebData (PaginatedData key value))
+insertDirectlyFromClient identifier ( key, value ) dict =
+    case get identifier key dict of
+        Just _ ->
+            -- Value is already in dict.
+            dict
+
+        Nothing ->
+            -- Very naively just add it to the end of the last page
+            let
+                existing =
+                    EveryDict.get identifier dict
+                        |> Maybe.withDefault (RemoteData.Success emptyPaginatedData)
+
+                existingDataAndPager =
+                    existing
+                        |> RemoteData.toMaybe
+                        |> Maybe.withDefault emptyPaginatedData
+
+                ( page, pager ) =
+                    existingDataAndPager.pager
+                        |> EveryDict.toList
+                        |> List.sortBy (\( key, _ ) -> key)
+                        |> List.reverse
+                        |> List.head
+                        |> Maybe.withDefault ( 1, RemoteData.NotAsked )
+
+                pagerUpdated =
+                    case pager of
+                        RemoteData.NotAsked ->
+                            -- First and last key are now the only page.
+                            RemoteData.Success ( key, key )
+
+                        RemoteData.Success ( start, _ ) ->
+                            -- Last key is now the new key.
+                            RemoteData.Success ( start, key )
+
+                        _ ->
+                            -- Satisfy the compiler.
+                            pager
+
+                existingDataAndPagerUpdated =
+                    { existingDataAndPager
+                        | data = EveryDictList.insert key value existingDataAndPager.data
+                        , pager = EveryDict.insert page pagerUpdated existingDataAndPager.pager
+                        , totalCount = existingDataAndPager.totalCount + 1
+                    }
+            in
+            EveryDict.insert identifier (RemoteData.Success existingDataAndPagerUpdated) dict
 
 
 {-| View helper.
