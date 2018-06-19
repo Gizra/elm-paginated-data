@@ -9,6 +9,7 @@ module PaginatedData
         , getItemsByPager
         , insertDirectlyFromClient
         , insertMultiple
+        , remove
         , setPageAsLoading
         , update
         , viewPager
@@ -17,7 +18,7 @@ module PaginatedData
 {-| A `PaginatedData` represents a dict of values, that are paginated on the
 server.
 
-@docs ContainerDict, PaginatedData, emptyPaginatedData, fetchAll, fetchPaginated, get, getItemsByPager, insertDirectlyFromClient, insertMultiple, setPageAsLoading, update, viewPager
+@docs ContainerDict, PaginatedData, emptyPaginatedData, fetchAll, fetchPaginated, get, getItemsByPager, insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, update, viewPager
 
 -}
 
@@ -238,6 +239,33 @@ update identifier key func dict =
                     { dataAndPager | data = EveryDictList.insert key valueUpdated dataAndPager.data }
             in
             EveryDict.insert identifier (RemoteData.Success dataAndPagerUpdated) dict
+
+
+{-| Using `remove` is not advised, as it can create a situtation where the item
+indicated as first or last in the `pager`, is missing from the `data`.
+However, it can be used in situations where all the items are shown, without a
+pager, so removing will not have an affect on the pager.
+-}
+remove :
+    identifier
+    -> key
+    -> EveryDict identifier (WebData (PaginatedData key value))
+    -> EveryDict identifier (WebData (PaginatedData key value))
+remove identifier key dict =
+    let
+        existing =
+            EveryDict.get identifier dict
+                |> Maybe.withDefault (RemoteData.Success emptyPaginatedData)
+
+        dataAndPager =
+            existing
+                |> RemoteData.toMaybe
+                |> Maybe.withDefault emptyPaginatedData
+
+        dataAndPagerUpdated =
+            { dataAndPager | data = EveryDictList.remove key dataAndPager.data }
+    in
+    EveryDict.insert identifier (RemoteData.Success dataAndPagerUpdated) dict
 
 
 {-| Used to indicate we're loading a page for the first time.
