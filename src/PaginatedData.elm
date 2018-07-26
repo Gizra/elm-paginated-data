@@ -2,6 +2,7 @@ module PaginatedData
     exposing
         ( ContainerDict
         , PaginatedData
+        , emptyContainer
         , emptyPaginatedData
         , fetchAll
         , fetchPaginated
@@ -18,7 +19,7 @@ module PaginatedData
 {-| A `PaginatedData` represents a dict of values, that are paginated on the
 server.
 
-@docs ContainerDict, PaginatedData, emptyPaginatedData, fetchAll, fetchPaginated, get, getItemsByPager, insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, update, viewPager
+@docs ContainerDict, PaginatedData, emptyContainer, emptyPaginatedData, fetchAll, fetchPaginated, get, getItemsByPager, insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, update, viewPager
 
 -}
 
@@ -51,6 +52,13 @@ type alias PaginatedData key value =
     -- calcualte how many pages we'll have based on the first page's result count.
     , totalCount : Int
     }
+
+
+{-| Return an empty container.
+-}
+emptyContainer : identifier -> ContainerDict identifier key value
+emptyContainer identifier =
+    EveryDict.singleton identifier emptyPaginatedData
 
 
 {-| Empty data, that has not been fetched yet.
@@ -109,7 +117,12 @@ fetchPaginated ( backendIndentifier, backendDict ) ( pageIdentifier, pageDict ) 
     if not isPreviousRequestFailed then
         if RemoteData.isNotAsked currentPageData then
             [ Just <| func currentPage ]
-        else if hasNextPage && RemoteData.isNotAsked nextPageData then
+        else if
+            hasNextPage
+                && RemoteData.isNotAsked nextPageData
+                -- Check that we haven't already fetched all Items.
+                && (EveryDictList.size existingDataAndPager.data < existingDataAndPager.totalCount)
+        then
             [ Just <| func (currentPage + 1) ]
         else
             []
@@ -158,9 +171,6 @@ fetchAll ( backendIndentifier, backendDict ) func =
         hasNextPage =
             EveryDict.member (currentPage + 1) existingDataAndPager.pager
 
-        -- If we haven't fetched all Items, so there need to be a next page.
-        -- @todo: Fix, after we get correct count.
-        -- || (EveryDictList.size existingDataAndPager.data < existingDataAndPager.totalCount)
         nextPageData =
             EveryDict.get (currentPage + 1) existingDataAndPager.pager
                 |> Maybe.withDefault RemoteData.NotAsked
