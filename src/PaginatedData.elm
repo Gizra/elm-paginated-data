@@ -7,6 +7,7 @@ module PaginatedData
         , fetchAll
         , fetchPaginated
         , get
+        , getAll
         , getItemsByPager
         , insertDirectlyFromClient
         , insertMultiple
@@ -19,7 +20,7 @@ module PaginatedData
 {-| A `PaginatedData` represents a dict of values, that are paginated on the
 server.
 
-@docs ContainerDict, PaginatedData, emptyContainer, emptyPaginatedData, fetchAll, fetchPaginated, get, getItemsByPager, insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, update, viewPager
+@docs ContainerDict, PaginatedData, emptyContainer, emptyPaginatedData, fetchAll, fetchPaginated, get, getAll, getItemsByPager, insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, update, viewPager
 
 -}
 
@@ -215,6 +216,26 @@ get identifier key dict =
                 |> Maybe.withDefault emptyPaginatedData
     in
     EveryDictList.get key dataAndPager.data
+
+
+{-| Get all values.
+-}
+getAll :
+    identifier
+    -> EveryDict identifier (WebData (PaginatedData key value))
+    -> EveryDictList key value
+getAll identifier dict =
+    let
+        existing =
+            EveryDict.get identifier dict
+                |> Maybe.withDefault (RemoteData.Success emptyPaginatedData)
+
+        dataAndPager =
+            existing
+                |> RemoteData.toMaybe
+                |> Maybe.withDefault emptyPaginatedData
+    in
+    dataAndPager.data
 
 
 {-| Update a single value.
