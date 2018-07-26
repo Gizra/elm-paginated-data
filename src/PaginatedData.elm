@@ -58,7 +58,7 @@ type alias PaginatedData key value =
 -}
 emptyContainer : identifier -> ContainerDict identifier key value
 emptyContainer identifier =
-    EveryDict.singleton identifier emptyPaginatedData
+    EveryDict.singleton identifier RemoteData.NotAsked
 
 
 {-| Empty data, that has not been fetched yet.
