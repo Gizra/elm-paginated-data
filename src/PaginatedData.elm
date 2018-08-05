@@ -9,6 +9,7 @@ module PaginatedData
         , get
         , getAll
         , getItemsByPager
+        , getPagerState
         , insertDirectlyFromClient
         , insertMultiple
         , remove
@@ -20,7 +21,7 @@ module PaginatedData
 {-| A `PaginatedData` represents a dict of values, that are paginated on the
 server.
 
-@docs ContainerDict, PaginatedData, emptyContainer, emptyPaginatedData, fetchAll, fetchPaginated, get, getAll, getItemsByPager, insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, update, viewPager
+@docs ContainerDict, PaginatedData, emptyContainer, emptyPaginatedData, fetchAll, fetchPaginated, get, getAll, getItemsByPager, getPagerState, insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, update, viewPager
 
 -}
 
@@ -297,6 +298,24 @@ remove identifier key dict =
             { dataAndPager | data = EveryDictList.remove key dataAndPager.data }
     in
     EveryDict.insert identifier (RemoteData.Success dataAndPagerUpdated) dict
+
+
+{-| Get the pager state of a specific page number.
+-}
+getPagerState : identifier -> Int -> EveryDict identifier (WebData (PaginatedData key value)) -> WebData ( key, key )
+getPagerState identifier pageNumber dict =
+    let
+        existing =
+            EveryDict.get identifier dict
+                |> Maybe.withDefault (RemoteData.Success emptyPaginatedData)
+
+        existingDataAndPager =
+            existing
+                |> RemoteData.toMaybe
+                |> Maybe.withDefault emptyPaginatedData
+    in
+    EveryDict.get pageNumber existingDataAndPager.pager
+        |> Maybe.withDefault RemoteData.NotAsked
 
 
 {-| Used to indicate we're loading a page for the first time.
