@@ -10,6 +10,7 @@ module PaginatedData
         , getAll
         , getItemsByPager
         , getPager
+        , getTotalCount
         , insertDirectlyFromClient
         , insertMultiple
         , remove
@@ -21,7 +22,7 @@ module PaginatedData
 {-| A `PaginatedData` represents a dict of values, that are paginated on the
 server.
 
-@docs ContainerDict, PaginatedData, emptyContainer, emptyPaginatedData, fetchAll, fetchPaginated, get, getAll, getItemsByPager, getPager, insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, update, viewPager
+@docs ContainerDict, PaginatedData, emptyContainer, emptyPaginatedData, fetchAll, fetchPaginated, get, getAll, getItemsByPager, getPager, getTotalCount, insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, update, viewPager
 
 -}
 
@@ -52,7 +53,9 @@ type alias PaginatedData key value =
 
     -- We keep the total count, so if we are asked to `fetchAll`, we can
     -- calcualte how many pages we'll have based on the first page's result count.
-    , totalCount : Int
+    -- We have this as a Maybe value, so it's easier to know if we already fetched
+    -- values (and there might be zero), or not.
+    , totalCount : Maybe Int
     }
 
 
@@ -69,7 +72,7 @@ emptyPaginatedData : PaginatedData key value
 emptyPaginatedData =
     { data = EveryDictList.empty
     , pager = EveryDict.empty
-    , totalCount = 0
+    , totalCount = Nothing
     }
 
 
@@ -115,6 +118,14 @@ fetchPaginated ( backendIndentifier, backendDict ) ( pageIdentifier, pageDict ) 
             EveryDict.get backendIndentifier backendDict
                 |> Maybe.withDefault RemoteData.NotAsked
                 |> RemoteData.isFailure
+
+        ( totalCount, isFetched ) =
+            case existingDataAndPager.totalCount of
+                Just val ->
+                    ( val, True )
+
+                Nothing ->
+                    ( 0, False )
     in
     if not isPreviousRequestFailed then
         if RemoteData.isNotAsked currentPageData then
@@ -123,7 +134,8 @@ fetchPaginated ( backendIndentifier, backendDict ) ( pageIdentifier, pageDict ) 
             hasNextPage
                 && RemoteData.isNotAsked nextPageData
                 -- Check that we haven't already fetched all Items.
-                && (EveryDictList.size existingDataAndPager.data < existingDataAndPager.totalCount)
+                && (EveryDictList.size existingDataAndPager.data < totalCount)
+                && isFetched
         then
             [ Just <| func (currentPage + 1) ]
         else
@@ -317,6 +329,23 @@ getPager identifier dict =
     existingDataAndPager.pager
 
 
+{-| Get the Total count.
+-}
+getTotalCount : identifier -> EveryDict identifier (WebData (PaginatedData key value)) -> Maybe Int
+getTotalCount identifier dict =
+    let
+        existing =
+            EveryDict.get identifier dict
+                |> Maybe.withDefault (RemoteData.Success emptyPaginatedData)
+
+        existingDataAndPager =
+            existing
+                |> RemoteData.toMaybe
+                |> Maybe.withDefault emptyPaginatedData
+    in
+    existingDataAndPager.totalCount
+
+
 {-| Used to indicate we're loading a page for the first time.
 -}
 setPageAsLoading :
@@ -478,7 +507,7 @@ insertMultiple identifier pageNumber webdata defaultItemFunc getItemFunc insertF
                     { existingDataAndPager
                         | data = itemsUpdated
                         , pager = pagerUpdated
-                        , totalCount = totalCount
+                        , totalCount = Just totalCount
                     }
             in
             EveryDict.insert identifier (RemoteData.Success existingDataAndPagerUpdated) dict
@@ -538,11 +567,15 @@ insertDirectlyFromClient identifier ( key, value ) dict =
                             -- Satisfy the compiler.
                             pager
 
+                totalCount =
+                    existingDataAndPager.totalCount
+                        |> Maybe.withDefault 0
+
                 existingDataAndPagerUpdated =
                     { existingDataAndPager
                         | data = EveryDictList.insert key value existingDataAndPager.data
                         , pager = EveryDict.insert page pagerUpdated existingDataAndPager.pager
-                        , totalCount = existingDataAndPager.totalCount + 1
+                        , totalCount = Just <| totalCount + 1
                     }
             in
             EveryDict.insert identifier (RemoteData.Success existingDataAndPagerUpdated) dict
