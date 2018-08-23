@@ -15,6 +15,7 @@ module PaginatedData
         , insertMultiple
         , remove
         , setPageAsLoading
+        , setTotalCount
         , update
         , viewPager
         )
@@ -22,7 +23,7 @@ module PaginatedData
 {-| A `PaginatedData` represents a dict of values, that are paginated on the
 server.
 
-@docs ContainerDict, PaginatedData, emptyContainer, emptyPaginatedData, fetchAll, fetchPaginated, get, getAll, getItemsByPager, getPager, getTotalCount, insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, update, viewPager
+@docs ContainerDict, PaginatedData, emptyContainer, emptyPaginatedData, fetchAll, fetchPaginated, get, getAll, getItemsByPager, getPager, getTotalCount, insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, setTotalCount, update, viewPager
 
 -}
 
@@ -344,6 +345,29 @@ getTotalCount identifier dict =
                 |> Maybe.withDefault emptyPaginatedData
     in
     existingDataAndPager.totalCount
+
+
+{-| Get the Total count, in case you need to set it manually.
+
+Normally, the totalCount will be updated via the fetch functions.
+
+-}
+setTotalCount : identifier -> Maybe Int -> EveryDict identifier (WebData (PaginatedData key value)) -> EveryDict identifier (WebData (PaginatedData key value))
+setTotalCount identifier totalCount dict =
+    let
+        existing =
+            EveryDict.get identifier dict
+                |> Maybe.withDefault (RemoteData.Success emptyPaginatedData)
+
+        existingDataAndPager =
+            existing
+                |> RemoteData.toMaybe
+                |> Maybe.withDefault emptyPaginatedData
+
+        existingDataAndPagerUpdated =
+            { existingDataAndPager | totalCount = totalCount }
+    in
+    EveryDict.insert identifier (RemoteData.Success existingDataAndPagerUpdated) dict
 
 
 {-| Used to indicate we're loading a page for the first time.
