@@ -349,7 +349,16 @@ getTotalCount identifier dict =
 
 {-| Get the Total count, in case you need to set it manually.
 
-Normally, the totalCount will be updated via the fetch functions.
+Normally, the `totalCount` will be updated via the fetch functions. However you
+may have special cases where you would like to change it yourself.
+
+For example, imagine a page with two different Elm widgets. One is resposnbile
+of fetching the data, and the other get the data via ports.
+
+In that case, one would have to also pass the `totalCount`, mostly for the case
+where the total count is zero. So, if `totalCount` remains a `Nothing`, we would
+know that no data was fetched. But if it was `Just 0`, we would know that we have
+fetching the data successfully, but it resulted with no items.
 
 -}
 setTotalCount : identifier -> Maybe Int -> EveryDict identifier (WebData (PaginatedData key value)) -> EveryDict identifier (WebData (PaginatedData key value))
