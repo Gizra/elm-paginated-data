@@ -97,10 +97,10 @@ fetchPaginated :
     -> ( b, EveryDict b number )
     -> (Int -> c)
     -> List (Maybe c)
-fetchPaginated ( backendIndentifier, backendDict ) ( pageIdentifier, pageDict ) func =
+fetchPaginated ( backendIdentifier, backendDict ) ( pageIdentifier, pageDict ) func =
     let
         existingData =
-            EveryDict.get backendIndentifier backendDict
+            EveryDict.get backendIdentifier backendDict
                 |> Maybe.withDefault RemoteData.NotAsked
 
         existingDataAndPager =
@@ -125,7 +125,7 @@ fetchPaginated ( backendIndentifier, backendDict ) ( pageIdentifier, pageDict ) 
 
         -- Prevent endless fetching in case the previous request has ended with `Failure`.
         isPreviousRequestFailed =
-            EveryDict.get backendIndentifier backendDict
+            EveryDict.get backendIdentifier backendDict
                 |> Maybe.withDefault RemoteData.NotAsked
                 |> RemoteData.isFailure
 
@@ -166,10 +166,10 @@ fetchAll :
     ( a, ContainerDict a key value )
     -> (Int -> c)
     -> List (Maybe c)
-fetchAll ( backendIndentifier, backendDict ) func =
+fetchAll ( backendIdentifier, backendDict ) func =
     let
         existingData =
-            EveryDict.get backendIndentifier backendDict
+            EveryDict.get backendIdentifier backendDict
                 |> Maybe.withDefault RemoteData.NotAsked
 
         existingDataAndPager =
@@ -204,7 +204,7 @@ fetchAll ( backendIndentifier, backendDict ) func =
 
         -- Prevent endless fetching in case the previous request has ended with `Failure`.
         isPreviousRequestFailed =
-            EveryDict.get backendIndentifier backendDict
+            EveryDict.get backendIdentifier backendDict
                 |> Maybe.withDefault RemoteData.NotAsked
                 |> RemoteData.isFailure
     in
