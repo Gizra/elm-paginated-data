@@ -64,7 +64,7 @@ module.
 
 -}
 fetchPaginated :
-    ( a, EveryDict a (WebData (PaginatedData key value)) )
+    ( a, ContainerDict a key value )
     -> ( b, EveryDict b number )
     -> (Int -> c)
     -> List (Maybe c)
@@ -134,7 +134,7 @@ Next page is fetched as the previous one arrives successfully.
 
 -}
 fetchAll :
-    ( a, EveryDict a (WebData (PaginatedData key value)) )
+    ( a, ContainerDict a key value )
     -> (Int -> c)
     -> List (Maybe c)
 fetchAll ( backendIndentifier, backendDict ) func =
@@ -202,7 +202,7 @@ fetchAll ( backendIndentifier, backendDict ) func =
 get :
     identifier
     -> key
-    -> EveryDict identifier (WebData (PaginatedData key value))
+    -> ContainerDict identifier key value
     -> Maybe value
 get identifier key dict =
     let
@@ -222,7 +222,7 @@ get identifier key dict =
 -}
 getAll :
     identifier
-    -> EveryDict identifier (WebData (PaginatedData key value))
+    -> ContainerDict identifier key value
     -> EveryDictList key value
 getAll identifier dict =
     let
@@ -244,8 +244,8 @@ update :
     identifier
     -> key
     -> (value -> value)
-    -> EveryDict identifier (WebData (PaginatedData key value))
-    -> EveryDict identifier (WebData (PaginatedData key value))
+    -> ContainerDict identifier key value
+    -> ContainerDict identifier key value
 update identifier key func dict =
     let
         existing =
@@ -280,8 +280,8 @@ pager, so removing will not have an affect on the pager.
 remove :
     identifier
     -> key
-    -> EveryDict identifier (WebData (PaginatedData key value))
-    -> EveryDict identifier (WebData (PaginatedData key value))
+    -> ContainerDict identifier key value
+    -> ContainerDict identifier key value
 remove identifier key dict =
     let
         existing =
@@ -301,7 +301,7 @@ remove identifier key dict =
 
 {-| Get the pager info.
 -}
-getPager : identifier -> EveryDict identifier (WebData (PaginatedData key value)) -> EveryDict Int (WebData ( key, key ))
+getPager : identifier -> ContainerDict identifier key value -> EveryDict Int (WebData ( key, key ))
 getPager identifier dict =
     let
         existing =
@@ -318,7 +318,7 @@ getPager identifier dict =
 
 {-| Get the Total count.
 -}
-getTotalCount : identifier -> EveryDict identifier (WebData (PaginatedData key value)) -> Maybe Int
+getTotalCount : identifier -> ContainerDict identifier key value -> Maybe Int
 getTotalCount identifier dict =
     let
         existing =
@@ -347,7 +347,7 @@ know that no data was fetched. But if it was `Just 0`, we would know that we hav
 fetching the data successfully, but it resulted with no items.
 
 -}
-setTotalCount : identifier -> Maybe Int -> EveryDict identifier (WebData (PaginatedData key value)) -> EveryDict identifier (WebData (PaginatedData key value))
+setTotalCount : identifier -> Maybe Int -> ContainerDict identifier key value -> ContainerDict identifier key value
 setTotalCount identifier totalCount dict =
     let
         existing =
@@ -370,8 +370,8 @@ setTotalCount identifier totalCount dict =
 setPageAsLoading :
     identifier
     -> Int
-    -> EveryDict identifier (WebData (PaginatedData key value))
-    -> EveryDict identifier (WebData (PaginatedData key value))
+    -> ContainerDict identifier key value
+    -> ContainerDict identifier key value
 setPageAsLoading identifier pageNumber dict =
     let
         existing =
@@ -549,8 +549,8 @@ insertMultiple identifier pageNumber webdata defaultItemFunc getItemFunc insertF
 insertDirectlyFromClient :
     identifier
     -> ( key, value )
-    -> EveryDict identifier (WebData (PaginatedData key value))
-    -> EveryDict identifier (WebData (PaginatedData key value))
+    -> ContainerDict identifier key value
+    -> ContainerDict identifier key value
 insertDirectlyFromClient identifier ( key, value ) dict =
     case get identifier key dict of
         Just _ ->
