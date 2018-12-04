@@ -1,9 +1,38 @@
-module PaginatedData exposing (ContainerDict, PaginatedData, emptyContainer, emptyPaginatedData, fetchAll, fetchPaginated, get, getAll, getItemsByPager, getPager, getTotalCount, insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, setTotalCount, update, viewPager)
+module PaginatedData exposing
+    ( ContainerDict, PaginatedData, emptyContainer, emptyPaginatedData
+    , get, getAll, getItemsByPager, getPager, getTotalCount
+    , fetchAll, fetchPaginated
+    , insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, setTotalCount, update
+    , viewPager
+    )
 
 {-| A `PaginatedData` represents a dict of values, that are paginated on the
 server.
 
-@docs ContainerDict, PaginatedData, emptyContainer, emptyPaginatedData, fetchAll, fetchPaginated, get, getAll, getItemsByPager, getPager, getTotalCount, insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, setTotalCount, update, viewPager
+
+### Types
+
+@docs ContainerDict, PaginatedData, emptyContainer, emptyPaginatedData
+
+
+### Accessors
+
+@docs get, getAll, getItemsByPager, getPager, getTotalCount
+
+
+### Fetch helpers
+
+@docs fetchAll, fetchPaginated
+
+
+### Updaters
+
+@docs insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, setTotalCount, update
+
+
+### View
+
+@docs viewPager
 
 -}
 
