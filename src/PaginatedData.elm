@@ -1,24 +1,4 @@
-module PaginatedData
-    exposing
-        ( ContainerDict
-        , PaginatedData
-        , emptyContainer
-        , emptyPaginatedData
-        , fetchAll
-        , fetchPaginated
-        , get
-        , getAll
-        , getItemsByPager
-        , getPager
-        , getTotalCount
-        , insertDirectlyFromClient
-        , insertMultiple
-        , remove
-        , setPageAsLoading
-        , setTotalCount
-        , update
-        , viewPager
-        )
+module PaginatedData exposing (ContainerDict, PaginatedData, emptyContainer, emptyPaginatedData, fetchAll, fetchPaginated, get, getAll, getItemsByPager, getPager, getTotalCount, insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, setTotalCount, update, viewPager)
 
 {-| A `PaginatedData` represents a dict of values, that are paginated on the
 server.
@@ -131,6 +111,7 @@ fetchPaginated ( backendIndentifier, backendDict ) ( pageIdentifier, pageDict ) 
     if not isPreviousRequestFailed then
         if RemoteData.isNotAsked currentPageData then
             [ Just <| func currentPage ]
+
         else if
             hasNextPage
                 && RemoteData.isNotAsked nextPageData
@@ -139,8 +120,10 @@ fetchPaginated ( backendIndentifier, backendDict ) ( pageIdentifier, pageDict ) 
                 && isFetched
         then
             [ Just <| func (currentPage + 1) ]
+
         else
             []
+
     else
         []
 
@@ -199,10 +182,13 @@ fetchAll ( backendIndentifier, backendDict ) func =
     if not isPreviousRequestFailed then
         if RemoteData.isNotAsked currentPageData then
             [ Just <| func currentPage ]
+
         else if hasNextPage && RemoteData.isNotAsked nextPageData then
             [ Just <| func (currentPage + 1) ]
+
         else
             []
+
     else
         []
 
@@ -455,6 +441,7 @@ insertMultiple identifier pageNumber webdata defaultItemFunc getItemFunc insertF
                             )
                             Nothing
                             (List.reverse <| List.range 1 (pageNumber - 1))
+
                     else
                         -- This is the first page, so there's nothing before it.
                         Nothing
@@ -465,6 +452,7 @@ insertMultiple identifier pageNumber webdata defaultItemFunc getItemFunc insertF
                             if totalCount == 0 then
                                 -- No items with placed bid.
                                 EveryDictList.empty
+
                             else
                                 -- This is the first page, we can enter by order.
                                 EveryDictList.foldl
@@ -515,6 +503,7 @@ insertMultiple identifier pageNumber webdata defaultItemFunc getItemFunc insertF
                     if totalCount == 0 then
                         -- Update the pager, so we won't continue fetching.
                         EveryDict.insert pageNumber (RemoteData.Success ( firstItem, lastItem )) existingDataAndPager.pager
+
                     else if EveryDict.size existingDataAndPager.pager <= 1 then
                         -- If the pager dict was not built yet, or we just have the
                         -- first page `Loading` - before we knew how many items we'll
@@ -526,12 +515,14 @@ insertMultiple identifier pageNumber webdata defaultItemFunc getItemFunc insertF
                                         value =
                                             if index == pageNumber then
                                                 RemoteData.Success ( firstItem, lastItem )
+
                                             else
                                                 RemoteData.NotAsked
                                     in
                                     EveryDict.insert index value accum
                                 )
                                 EveryDict.empty
+
                     else
                         -- Update the existing pager dict.
                         EveryDict.insert pageNumber (RemoteData.Success ( firstItem, lastItem )) existingDataAndPager.pager
@@ -625,6 +616,7 @@ viewPager :
 viewPager identifier { pager } pageProperty func =
     if EveryDict.size pager <= 1 then
         text ""
+
     else
         let
             currentPage =
@@ -642,6 +634,7 @@ viewPager identifier { pager } pageProperty func =
                             aAttr =
                                 if pageNumber == currentPage then
                                     [ action "javascript:void(0);" ]
+
                                 else
                                     [ onClick <| func pageNumber ]
                         in
@@ -669,6 +662,7 @@ getItemsByPager identifier { data, pager } pageProperty =
         -- We have only a single page.
     then
         data
+
     else
         let
             currentPage =
