@@ -1,5 +1,5 @@
 module PaginatedData exposing
-    ( PaginatedData, emptyPaginatedData
+    ( PaginatedData, emptyPaginatedData, Pager
     , get, getAll, getItemsByPager, getPager, getTotalCount
     , fetchAll, fetchPaginated
     , insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, setTotalCount, update
@@ -12,7 +12,7 @@ server.
 
 ### Types
 
-@docs PaginatedData, emptyPaginatedData
+@docs PaginatedData, emptyPaginatedData, Pager
 
 
 ### Accessors
@@ -50,7 +50,7 @@ it's easier to insert new items in the correct place.
 -}
 type alias PaginatedData key value =
     { data : EveryDictList key value
-    , pager : EveryDict Int (WebData ( key, key ))
+    , pager : Pager key
 
     -- We keep the total count, so if we are asked to `fetchAll`, we can
     -- calcualte how many pages we'll have based on the first page's result count.
@@ -58,6 +58,12 @@ type alias PaginatedData key value =
     -- values (and there might be zero), or not.
     , totalCount : Maybe Int
     }
+
+
+{-| Our pager type.
+-}
+type alias Pager key =
+    EveryDict Int (WebData ( key, key ))
 
 
 {-| Empty data, that has not been fetched yet.
@@ -215,7 +221,7 @@ remove key dataAndPager =
 
 {-| Get the pager info.
 -}
-getPager : PaginatedData key value -> EveryDict Int (WebData ( key, key ))
+getPager : PaginatedData key value -> Pager key
 getPager existingDataAndPager =
     existingDataAndPager.pager
 
