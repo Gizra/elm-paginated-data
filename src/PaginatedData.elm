@@ -94,10 +94,10 @@ module.
 -}
 fetchPaginated :
     ( a, ContainerDict a key value )
-    -> ( b, EveryDict b number )
+    -> Int
     -> (Int -> c)
     -> List (Maybe c)
-fetchPaginated ( backendIdentifier, backendDict ) ( pageIdentifier, pageDict ) func =
+fetchPaginated ( backendIdentifier, backendDict ) currentPage func =
     let
         existingData =
             EveryDict.get backendIdentifier backendDict
@@ -107,10 +107,6 @@ fetchPaginated ( backendIdentifier, backendDict ) ( pageIdentifier, pageDict ) f
             existingData
                 |> RemoteData.toMaybe
                 |> Maybe.withDefault emptyPaginatedData
-
-        currentPage =
-            EveryDict.get pageIdentifier pageDict
-                |> Maybe.withDefault 1
 
         currentPageData =
             EveryDict.get currentPage existingDataAndPager.pager
