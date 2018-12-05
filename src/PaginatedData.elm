@@ -674,11 +674,7 @@ viewPager identifier { pager } pageProperty func =
 -}
 getItemsByPager :
     identifier
-    ->
-        { dataAndPager
-            | data : EveryDictList k v
-            , pager : EveryDict Int (WebData ( k, k ))
-        }
+    -> PaginatedData k v
     -> EveryDict identifier Int
     -> EveryDictList k v
 getItemsByPager identifier { data, pager } pageProperty =
