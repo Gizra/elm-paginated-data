@@ -76,8 +76,8 @@ emptyPaginatedData =
 module.
 
 -}
-fetchPaginated : PaginatedData k v -> Int -> (Int -> c) -> List (Maybe c)
-fetchPaginated existingDataAndPager currentPage func =
+fetchPaginated : PaginatedData k v -> Int -> List Int
+fetchPaginated existingDataAndPager currentPage =
     let
         currentPageData =
             EveryDict.get currentPage existingDataAndPager.pager
@@ -104,7 +104,7 @@ fetchPaginated existingDataAndPager currentPage func =
     in
     if not isPreviousRequestFailed then
         if RemoteData.isNotAsked currentPageData then
-            [ Just <| func currentPage ]
+            [ currentPage ]
 
         else if
             hasNextPage
@@ -113,7 +113,7 @@ fetchPaginated existingDataAndPager currentPage func =
                 && (EveryDictList.size existingDataAndPager.data < totalCount)
                 && isFetched
         then
-            [ Just <| func (currentPage + 1) ]
+            [ currentPage + 1 ]
 
         else
             []
@@ -127,8 +127,8 @@ fetchPaginated existingDataAndPager currentPage func =
 Next page is fetched as the previous one arrives successfully.
 
 -}
-fetchAll : PaginatedData k v -> (Int -> c) -> List (Maybe c)
-fetchAll existingDataAndPager func =
+fetchAll : PaginatedData k v -> List Int
+fetchAll existingDataAndPager =
     let
         -- Current page is actually the last page that had a successful
         -- response.
@@ -161,10 +161,10 @@ fetchAll existingDataAndPager func =
     in
     if not isPreviousRequestFailed then
         if RemoteData.isNotAsked currentPageData then
-            [ Just <| func currentPage ]
+            [ currentPage ]
 
         else if hasNextPage && RemoteData.isNotAsked nextPageData then
-            [ Just <| func (currentPage + 1) ]
+            [ currentPage + 1 ]
 
         else
             []
