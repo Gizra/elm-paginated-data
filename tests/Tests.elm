@@ -10,10 +10,10 @@ import Test exposing (..)
 testGetAll : Test
 testGetAll =
     describe "getAll"
-        [ test "empty comtainers should be empty" <|
+        [ test "empty data should be empty" <|
             \_ ->
-                emptyContainer "id"
-                    |> getAll "id"
+                emptyPaginatedData
+                    |> getAll
                     |> EveryDictList.size
                     |> Expect.equal 0
         ]
