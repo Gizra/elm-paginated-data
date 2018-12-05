@@ -457,12 +457,11 @@ insertDirectlyFromClient key value existingDataAndPager =
 {-| View helper.
 -}
 viewPager :
-    identifier
-    -> { dataAndPager | pager : EveryDict Int v }
+    { dataAndPager | pager : EveryDict Int v }
     -> Int
     -> (Int -> msg)
     -> Html msg
-viewPager identifier { pager } currentPage func =
+viewPager { pager } currentPage func =
     if EveryDict.size pager <= 1 then
         text ""
 
