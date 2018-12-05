@@ -635,19 +635,14 @@ insertDirectlyFromClient identifier ( key, value ) dict =
 viewPager :
     identifier
     -> { dataAndPager | pager : EveryDict Int v }
-    -> EveryDict identifier Int
+    -> Int
     -> (Int -> msg)
     -> Html msg
-viewPager identifier { pager } pageProperty func =
+viewPager identifier { pager } currentPage func =
     if EveryDict.size pager <= 1 then
         text ""
 
     else
-        let
-            currentPage =
-                EveryDict.get identifier pageProperty
-                    |> Maybe.withDefault 1
-        in
         -- @todo :Allow adding own attributes to ul/ li
         ul [ class "pagination" ]
             (pager
@@ -673,11 +668,10 @@ viewPager identifier { pager } pageProperty func =
 {-| Get localy Items from the dict, by their page number.
 -}
 getItemsByPager :
-    identifier
-    -> PaginatedData k v
-    -> EveryDict identifier Int
+    PaginatedData k v
+    -> Int
     -> EveryDictList k v
-getItemsByPager identifier { data, pager } pageProperty =
+getItemsByPager { data, pager } currentPage =
     if
         EveryDict.size pager <= 1
         -- We have only a single page.
@@ -686,10 +680,6 @@ getItemsByPager identifier { data, pager } pageProperty =
 
     else
         let
-            currentPage =
-                EveryDict.get identifier pageProperty
-                    |> Maybe.withDefault 1
-
             pagerInfo =
                 EveryDict.get currentPage pager
                     |> Maybe.withDefault RemoteData.NotAsked
