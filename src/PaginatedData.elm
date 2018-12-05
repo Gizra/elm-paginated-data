@@ -456,11 +456,7 @@ insertDirectlyFromClient key value existingDataAndPager =
 
 {-| View helper.
 -}
-viewPager :
-    { dataAndPager | pager : EveryDict Int v }
-    -> Int
-    -> (Int -> msg)
-    -> Html msg
+viewPager : PaginatedData k v -> Int -> (Int -> msg) -> Html msg
 viewPager { pager } currentPage func =
     if EveryDict.size pager <= 1 then
         text ""
@@ -490,10 +486,7 @@ viewPager { pager } currentPage func =
 
 {-| Get localy Items from the dict, by their page number.
 -}
-getItemsByPager :
-    PaginatedData k v
-    -> Int
-    -> EveryDictList k v
+getItemsByPager : PaginatedData k v -> Int -> EveryDictList k v
 getItemsByPager { data, pager } currentPage =
     if
         EveryDict.size pager <= 1
