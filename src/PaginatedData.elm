@@ -48,16 +48,17 @@ import RemoteData exposing (WebData)
 The pager holds the a tuple with the first and last Item key for that page, so
 it's easier to insert new items in the correct place.
 -}
-type alias PaginatedData key value =
-    { data : EveryDictList key value
-    , pager : Pager key
+type PaginatedData key value
+    = PaginatedData
+        { data : EveryDictList key value
+        , pager : Pager key
 
-    -- We keep the total count, so if we are asked to `fetchAll`, we can
-    -- calcualte how many pages we'll have based on the first page's result count.
-    -- We have this as a Maybe value, so it's easier to know if we already fetched
-    -- values (and there might be zero), or not.
-    , totalCount : Maybe Int
-    }
+        -- We keep the total count, so if we are asked to `fetchAll`, we can
+        -- calcualte how many pages we'll have based on the first page's result count.
+        -- We have this as a Maybe value, so it's easier to know if we already fetched
+        -- values (and there might be zero), or not.
+        , totalCount : Maybe Int
+        }
 
 
 {-| Our pager type.
@@ -70,10 +71,11 @@ type alias Pager key =
 -}
 emptyPaginatedData : PaginatedData key value
 emptyPaginatedData =
-    { data = EveryDictList.empty
-    , pager = EveryDict.empty
-    , totalCount = Nothing
-    }
+    PaginatedData
+        { data = EveryDictList.empty
+        , pager = EveryDict.empty
+        , totalCount = Nothing
+        }
 
 
 {-| Fetch helper.
@@ -83,7 +85,7 @@ module.
 
 -}
 fetchPaginated : PaginatedData k v -> Int -> List Int
-fetchPaginated existingDataAndPager currentPage =
+fetchPaginated (PaginatedData existingDataAndPager) currentPage =
     let
         currentPageData =
             EveryDict.get currentPage existingDataAndPager.pager
@@ -134,7 +136,7 @@ Next page is fetched as the previous one arrives successfully.
 
 -}
 fetchAll : PaginatedData k v -> List Int
-fetchAll existingDataAndPager =
+fetchAll (PaginatedData existingDataAndPager) =
     let
         -- Current page is actually the last page that had a successful
         -- response.
@@ -186,27 +188,28 @@ fetchAll existingDataAndPager =
 {-| Get a single value.
 -}
 get : key -> PaginatedData key value -> Maybe value
-get key dataAndPager =
+get key (PaginatedData dataAndPager) =
     EveryDictList.get key dataAndPager.data
 
 
 {-| Get all values.
 -}
 getAll : PaginatedData key value -> EveryDictList key value
-getAll dataAndPager =
+getAll (PaginatedData dataAndPager) =
     dataAndPager.data
 
 
 {-| Update a single value.
 -}
 update : key -> (value -> value) -> PaginatedData key value -> PaginatedData key value
-update key func dataAndPager =
+update key func ((PaginatedData dataAndPager) as wrapper) =
     case EveryDictList.get key dataAndPager.data of
         Nothing ->
-            dataAndPager
+            wrapper
 
         Just value ->
-            { dataAndPager | data = EveryDictList.insert key (func value) dataAndPager.data }
+            PaginatedData
+                { dataAndPager | data = EveryDictList.insert key (func value) dataAndPager.data }
 
 
 {-| Using `remove` is not advised, as it can create a situtation where the item
@@ -215,21 +218,22 @@ However, it can be used in situations where all the items are shown, without a
 pager, so removing will not have an affect on the pager.
 -}
 remove : key -> PaginatedData key value -> PaginatedData key value
-remove key dataAndPager =
-    { dataAndPager | data = EveryDictList.remove key dataAndPager.data }
+remove key (PaginatedData dataAndPager) =
+    PaginatedData
+        { dataAndPager | data = EveryDictList.remove key dataAndPager.data }
 
 
 {-| Get the pager info.
 -}
 getPager : PaginatedData key value -> Pager key
-getPager existingDataAndPager =
+getPager (PaginatedData existingDataAndPager) =
     existingDataAndPager.pager
 
 
 {-| Get the Total count.
 -}
 getTotalCount : PaginatedData key value -> Maybe Int
-getTotalCount existingDataAndPager =
+getTotalCount (PaginatedData existingDataAndPager) =
     existingDataAndPager.totalCount
 
 
@@ -248,19 +252,21 @@ fetching the data successfully, but it resulted with no items.
 
 -}
 setTotalCount : Maybe Int -> PaginatedData key value -> PaginatedData key value
-setTotalCount totalCount existingDataAndPager =
-    { existingDataAndPager | totalCount = totalCount }
+setTotalCount totalCount (PaginatedData existingDataAndPager) =
+    PaginatedData
+        { existingDataAndPager | totalCount = totalCount }
 
 
 {-| Used to indicate we're loading a page for the first time.
 -}
 setPageAsLoading : Int -> PaginatedData key value -> PaginatedData key value
-setPageAsLoading pageNumber existingDataAndPager =
+setPageAsLoading pageNumber (PaginatedData existingDataAndPager) =
     let
         pagerUpdated =
             EveryDict.insert pageNumber RemoteData.Loading existingDataAndPager.pager
     in
-    { existingDataAndPager | pager = pagerUpdated }
+    PaginatedData
+        { existingDataAndPager | pager = pagerUpdated }
 
 
 {-| Insert multiple Items into the data and pager dict.
@@ -274,7 +280,7 @@ insertMultiple :
     -> (k -> v -> ( a1, EveryDictList a1 value ) -> ( a1, EveryDictList a1 value ))
     -> PaginatedData a1 value
     -> PaginatedData a1 value
-insertMultiple pageNumber webdata defaultItemFunc getItemFunc insertFunc insertAfterFunc existingDataAndPager =
+insertMultiple pageNumber webdata defaultItemFunc getItemFunc insertFunc insertAfterFunc ((PaginatedData existingDataAndPager) as wrapper) =
     case webdata of
         RemoteData.Success ( items, totalCount ) ->
             let
@@ -387,32 +393,34 @@ insertMultiple pageNumber webdata defaultItemFunc getItemFunc insertFunc insertA
                         -- Update the existing pager dict.
                         EveryDict.insert pageNumber (RemoteData.Success ( firstItem, lastItem )) existingDataAndPager.pager
             in
-            { existingDataAndPager
-                | data = itemsUpdated
-                , pager = pagerUpdated
-                , totalCount = Just totalCount
-            }
+            PaginatedData
+                { existingDataAndPager
+                    | data = itemsUpdated
+                    , pager = pagerUpdated
+                    , totalCount = Just totalCount
+                }
 
         RemoteData.Failure error ->
             let
                 pager =
                     EveryDict.insert pageNumber (RemoteData.Failure error) existingDataAndPager.pager
             in
-            { existingDataAndPager | pager = pager }
+            PaginatedData
+                { existingDataAndPager | pager = pager }
 
         _ ->
             -- Satisfy the compiler.
-            existingDataAndPager
+            wrapper
 
 
 {-| @todo: Add docs, and improve
 -}
 insertDirectlyFromClient : key -> value -> PaginatedData key value -> PaginatedData key value
-insertDirectlyFromClient key value existingDataAndPager =
-    case get key existingDataAndPager of
+insertDirectlyFromClient key value ((PaginatedData existingDataAndPager) as wrapper) =
+    case get key wrapper of
         Just _ ->
             -- Value is already in dict.
-            existingDataAndPager
+            wrapper
 
         Nothing ->
             -- Very naively just add it to the end of the last page
@@ -443,17 +451,18 @@ insertDirectlyFromClient key value existingDataAndPager =
                     existingDataAndPager.totalCount
                         |> Maybe.withDefault 0
             in
-            { existingDataAndPager
-                | data = EveryDictList.insert key value existingDataAndPager.data
-                , pager = EveryDict.insert page pagerUpdated existingDataAndPager.pager
-                , totalCount = Just <| totalCount + 1
-            }
+            PaginatedData
+                { existingDataAndPager
+                    | data = EveryDictList.insert key value existingDataAndPager.data
+                    , pager = EveryDict.insert page pagerUpdated existingDataAndPager.pager
+                    , totalCount = Just <| totalCount + 1
+                }
 
 
 {-| View helper.
 -}
 viewPager : PaginatedData k v -> Int -> (Int -> msg) -> Html msg
-viewPager { pager } currentPage func =
+viewPager (PaginatedData { pager }) currentPage func =
     if EveryDict.size pager <= 1 then
         text ""
 
@@ -483,7 +492,7 @@ viewPager { pager } currentPage func =
 {-| Get localy Items from the dict, by their page number.
 -}
 getItemsByPager : PaginatedData k v -> Int -> EveryDictList k v
-getItemsByPager { data, pager } currentPage =
+getItemsByPager (PaginatedData { data, pager }) currentPage =
     if
         EveryDict.size pager <= 1
         -- We have only a single page.
