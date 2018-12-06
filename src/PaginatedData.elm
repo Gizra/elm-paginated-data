@@ -133,6 +133,9 @@ This function is a nice helper for the
 [`andThenFetch`](https://package.elm-lang.org/packages/Gizra/elm-essentials/latest/Gizra-Update#andThenFetch)
 function, but is useful in other contexts as well.
 
+If you'd like to fetch all the pages (one at a time), rather than just the
+current page and possibly the next page, take a look at `fetchAll` instead.
+
 -}
 fetchPaginated : PaginatedData e k v -> Int -> List Int
 fetchPaginated (PaginatedData existingDataAndPager) currentPage =
@@ -142,7 +145,7 @@ fetchPaginated (PaginatedData existingDataAndPager) currentPage =
 
         currentPageData =
             Dict.get currentPage existingDataAndPager.pager
-                |> Maybe.withDefault RemoteData.NotAsked
+                |> Maybe.withDefault NotAsked
 
         nextPageData =
             Dict.get nextPage existingDataAndPager.pager
@@ -194,9 +197,25 @@ fetchPaginated (PaginatedData existingDataAndPager) currentPage =
                     []
 
 
-{-| Fetch all existing pages.
+{-| Suppose you'd like to fetch all the pages, but just one at a time. You'll
+start with the first page -- when it successfully arrives, you'll request the
+next page, and so on. That's what this function helps with.
 
-Next page is fetched as the previous one arrives successfully.
+  - The first time you call it (with an `emptyPaginatedData`), it will return
+    `[1]` ... suggesting that you get the first page.
+
+  - Once you call `setPageLoading` to indicate that a request for page 1 is in
+    progress, calling this again will return `[]` -- we wait for a result.
+
+  - If that request ends up being an error, we'll return `[]` when you call this
+    again. We don't help with error recovery here, because that will differ too
+    much dependning on your context.
+
+  - If that request succeeds, and you insert the results here, we'll return `[2]`
+    the next time you call this. It will be time to fetch the next page!
+
+If you don't want to fetch all the pages at once, take a look at
+`fetchPaginatedData` instead.
 
 -}
 fetchAll : PaginatedData e k v -> List Int
@@ -218,14 +237,14 @@ fetchAll (PaginatedData existingDataAndPager) =
 
         currentPageData =
             Dict.get currentPage existingDataAndPager.pager
-                |> Maybe.withDefault RemoteData.NotAsked
+                |> Maybe.withDefault NotAsked
 
         hasNextPage =
             Dict.member (currentPage + 1) existingDataAndPager.pager
 
         nextPageData =
             Dict.get (currentPage + 1) existingDataAndPager.pager
-                |> Maybe.withDefault RemoteData.NotAsked
+                |> Maybe.withDefault NotAsked
     in
     if RemoteData.isNotAsked currentPageData then
         [ currentPage ]
@@ -255,7 +274,8 @@ getAll (PaginatedData dataAndPager) =
     dataAndPager.data
 
 
-{-| Update a single value.
+{-| Update a single value. If they key is not found, the `PaginatedData` is
+returned unchanged.
 -}
 update : key -> (value -> value) -> PaginatedData err key value -> PaginatedData err key value
 update key func ((PaginatedData dataAndPager) as wrapper) =
@@ -268,10 +288,13 @@ update key func ((PaginatedData dataAndPager) as wrapper) =
                 { dataAndPager | data = EveryDictList.insert key (func value) dataAndPager.data }
 
 
-{-| Using `remove` is not advised, as it can create a situtation where the item
+{-| Remove a value from the data.
+
+Using `remove` is not advised, as it can create a situtation where the item
 indicated as first or last in the `pager`, is missing from the `data`.
-However, it can be used in situations where all the items are shown, without a
-pager, so removing will not have an affect on the pager.
+However, it can be used in situations where all the items are shown,
+without a pager, so removing will not have an effect on the pager.
+
 -}
 remove : key -> PaginatedData err key value -> PaginatedData err key value
 remove key (PaginatedData dataAndPager) =
@@ -299,14 +322,18 @@ getPage page (PaginatedData existingDataAndPager) =
         |> Maybe.withDefault NotAsked
 
 
-{-| Get the Total count.
+{-| Get the total count of all the values on all the pages. This includes
+values on pages which we have not fetched yet.
+
+If we don't know what the total count is yet, this will be `Nothing`.
+
 -}
 getTotalCount : PaginatedData err key value -> Maybe Int
 getTotalCount (PaginatedData existingDataAndPager) =
     existingDataAndPager.totalCount
 
 
-{-| Get the Total count, in case you need to set it manually.
+{-| Set the total count, in case you need to set it manually.
 
 Normally, the `totalCount` will be updated via the fetch functions. However you
 may have special cases where you would like to change it yourself.
@@ -326,13 +353,13 @@ setTotalCount totalCount (PaginatedData existingDataAndPager) =
         { existingDataAndPager | totalCount = totalCount }
 
 
-{-| Used to indicate we're loading a page for the first time.
+{-| Mark that a request for the specified page (1-based) is currently in progress.
 -}
 setPageAsLoading : Int -> PaginatedData err key value -> PaginatedData err key value
 setPageAsLoading pageNumber (PaginatedData existingDataAndPager) =
     let
         pagerUpdated =
-            Dict.insert pageNumber RemoteData.Loading existingDataAndPager.pager
+            Dict.insert pageNumber Loading existingDataAndPager.pager
     in
     PaginatedData
         { existingDataAndPager | pager = pagerUpdated }
@@ -351,7 +378,7 @@ insertMultiple :
     -> PaginatedData err a1 value
 insertMultiple pageNumber webdata defaultItemFunc getItemFunc insertFunc insertAfterFunc ((PaginatedData existingDataAndPager) as wrapper) =
     case webdata of
-        RemoteData.Success ( items, totalCount ) ->
+        Success ( items, totalCount ) ->
             let
                 maybePreviousItemLastUuid =
                     if pageNumber > 1 then
@@ -437,7 +464,7 @@ insertMultiple pageNumber webdata defaultItemFunc getItemFunc insertFunc insertA
                 pagerUpdated =
                     if totalCount == 0 then
                         -- Update the pager, so we won't continue fetching.
-                        Dict.insert pageNumber (RemoteData.Success ( firstItem, lastItem )) existingDataAndPager.pager
+                        Dict.insert pageNumber (Success ( firstItem, lastItem )) existingDataAndPager.pager
 
                     else if Dict.size existingDataAndPager.pager <= 1 then
                         -- If the pager dict was not built yet, or we just have the
@@ -449,10 +476,10 @@ insertMultiple pageNumber webdata defaultItemFunc getItemFunc insertFunc insertA
                                     let
                                         value =
                                             if index == pageNumber then
-                                                RemoteData.Success ( firstItem, lastItem )
+                                                Success ( firstItem, lastItem )
 
                                             else
-                                                RemoteData.NotAsked
+                                                NotAsked
                                     in
                                     Dict.insert index value accum
                                 )
@@ -460,7 +487,7 @@ insertMultiple pageNumber webdata defaultItemFunc getItemFunc insertFunc insertA
 
                     else
                         -- Update the existing pager dict.
-                        Dict.insert pageNumber (RemoteData.Success ( firstItem, lastItem )) existingDataAndPager.pager
+                        Dict.insert pageNumber (Success ( firstItem, lastItem )) existingDataAndPager.pager
             in
             PaginatedData
                 { existingDataAndPager
@@ -469,10 +496,10 @@ insertMultiple pageNumber webdata defaultItemFunc getItemFunc insertFunc insertA
                     , totalCount = Just totalCount
                 }
 
-        RemoteData.Failure error ->
+        Failure error ->
             let
                 pager =
-                    Dict.insert pageNumber (RemoteData.Failure error) existingDataAndPager.pager
+                    Dict.insert pageNumber (Failure error) existingDataAndPager.pager
             in
             PaginatedData
                 { existingDataAndPager | pager = pager }
@@ -500,17 +527,17 @@ insertDirectlyFromClient key value ((PaginatedData existingDataAndPager) as wrap
                         |> List.sortBy (\( key, _ ) -> key)
                         |> List.reverse
                         |> List.head
-                        |> Maybe.withDefault ( 1, RemoteData.NotAsked )
+                        |> Maybe.withDefault ( 1, NotAsked )
 
                 pagerUpdated =
                     case pager of
-                        RemoteData.NotAsked ->
+                        NotAsked ->
                             -- First and last key are now the only page.
-                            RemoteData.Success ( key, key )
+                            Success ( key, key )
 
-                        RemoteData.Success ( start, _ ) ->
+                        Success ( start, _ ) ->
                             -- Last key is now the new key.
-                            RemoteData.Success ( start, key )
+                            Success ( start, key )
 
                         _ ->
                             -- Satisfy the compiler.
@@ -558,7 +585,7 @@ viewPager (PaginatedData { pager }) currentPage func =
             )
 
 
-{-| Get localy Items from the dict, by their page number.
+{-| Get all the items which are on the specified page (1-based).
 -}
 getItemsByPager : PaginatedData e k v -> Int -> EveryDictList k v
 getItemsByPager (PaginatedData { data, pager }) currentPage =
@@ -572,10 +599,10 @@ getItemsByPager (PaginatedData { data, pager }) currentPage =
         let
             pagerInfo =
                 Dict.get currentPage pager
-                    |> Maybe.withDefault RemoteData.NotAsked
+                    |> Maybe.withDefault NotAsked
         in
         case pagerInfo of
-            RemoteData.Success ( firstItem, lastItem ) ->
+            Success ( firstItem, lastItem ) ->
                 let
                     firstIndex =
                         EveryDictList.indexOfKey firstItem data
