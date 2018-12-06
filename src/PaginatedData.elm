@@ -1,6 +1,6 @@
 module PaginatedData exposing
-    ( PaginatedData, emptyPaginatedData, Pager
-    , get, getAll, getItemsByPager, getPager, getTotalCount
+    ( PaginatedData, emptyPaginatedData
+    , get, getAll, getItemsByPager, getTotalCount, getPage
     , fetchAll, fetchPaginated
     , insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, setTotalCount, update
     , viewPager
@@ -17,12 +17,12 @@ requests are in flight?
 
 ### Types
 
-@docs PaginatedData, emptyPaginatedData, Pager
+@docs PaginatedData, emptyPaginatedData
 
 
 ### Accessors
 
-@docs get, getAll, getItemsByPager, getPager, getTotalCount
+@docs get, getAll, getItemsByPager, getTotalCount, getPage
 
 
 ### Fetch helpers
@@ -73,19 +73,8 @@ type PaginatedData key value
         }
 
 
-{-| The `Pager` represents the status of each request for a page of data.
-The key for the `Dict` is the page number, which is 1-based. The value
-represents the status of a request for that page:
-
-  - `NotAsked` means that we haven't requested that page.
-
-  - `Loading` means that a request for that page is in progress.
-
-  - `Failure err` means that a request for that page has failed.
-
-  - `Success (key, key)` means that we received data. The two keys represent
-    the keys corresponding to the first and last items on the page.
-
+{-| We don't export the `Pager` type so we can change it more easily
+if we need to. We do export `getPage` to access individual pages.
 -}
 type alias Pager key =
     Dict Int (WebData ( key, key ))
@@ -286,11 +275,24 @@ remove key (PaginatedData dataAndPager) =
         { dataAndPager | data = EveryDictList.remove key dataAndPager.data }
 
 
-{-| Get the pager info.
+{-| Get the pager info for the specified page (which is 1-based ... that is,
+the first page is page 1).
+
+  - `NotAsked` means that we haven't requested that page.
+
+  - `Loading` means that a request for that page is in progress.
+
+  - `Failure err` means that a request for that page has failed.
+
+  - `Success (key, key)` means that we received data. The two keys represent
+    the keys corresponding to the first and last items on the page.
+
 -}
-getPager : PaginatedData key value -> Pager key
-getPager (PaginatedData existingDataAndPager) =
+getPage : Int -> PaginatedData key value -> WebData ( key, key )
+getPage page (PaginatedData existingDataAndPager) =
     existingDataAndPager.pager
+        |> Dict.get page
+        |> Maybe.withDefault NotAsked
 
 
 {-| Get the Total count.
