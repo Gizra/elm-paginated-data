@@ -136,47 +136,61 @@ function, but is useful in other contexts as well.
 fetchPaginated : PaginatedData k v -> Int -> List Int
 fetchPaginated (PaginatedData existingDataAndPager) currentPage =
     let
+        nextPage =
+            currentPage + 1
+
         currentPageData =
             Dict.get currentPage existingDataAndPager.pager
                 |> Maybe.withDefault RemoteData.NotAsked
 
-        hasNextPage =
-            Dict.member (currentPage + 1) existingDataAndPager.pager
-
         nextPageData =
-            Dict.get (currentPage + 1) existingDataAndPager.pager
-                |> Maybe.withDefault RemoteData.NotAsked
-
-        -- Prevent endless fetching in case the previous request has ended with `Failure`.
-        isPreviousRequestFailed =
-            RemoteData.isFailure currentPageData
-
-        ( totalCount, isFetched ) =
-            case existingDataAndPager.totalCount of
-                Just val ->
-                    ( val, True )
-
-                Nothing ->
-                    ( 0, False )
+            Dict.get nextPage existingDataAndPager.pager
     in
-    if not isPreviousRequestFailed then
-        if RemoteData.isNotAsked currentPageData then
+    case currentPageData of
+        NotAsked ->
+            -- If we haven't asked for the current page yet, we should do so.
             [ currentPage ]
 
-        else if
-            hasNextPage
-                && RemoteData.isNotAsked nextPageData
-                -- Check that we haven't already fetched all Items.
-                && (EveryDictList.size existingDataAndPager.data < totalCount)
-                && isFetched
-        then
-            [ currentPage + 1 ]
-
-        else
+        Loading ->
+            -- If the current page is loading, we wait for an answer.
             []
 
-    else
-        []
+        Failure _ ->
+            -- We don't automatically re-try failures ... and, if we got
+            -- a failure, we don't try to pre-fetch the next page.
+            []
+
+        Success _ ->
+            -- If we successfully have data for the current page, we check
+            -- whether to fetch the next page.
+            case nextPageData of
+                Just NotAsked ->
+                    -- We only try to fetch the next page if we actually have
+                    -- an entry in the pager for it, and it is a `NotAsked`.
+                    -- This implies that we've literally created an entry for
+                    -- every page we expect. Should verify that below -- if
+                    -- we don't pre-create a bunch of `NotAsked` entries, then
+                    -- this doesn't make sense.
+                    case existingDataAndPager.totalCount of
+                        Just count ->
+                            -- We also check whether we've already received
+                            -- all the items we expect. In that case, we don't
+                            -- try to pre-fetch.
+                            if EveryDictList.size existingDataAndPager.data < count then
+                                [ nextPage ]
+
+                            else
+                                []
+
+                        Nothing ->
+                            -- If we don't know the total count, we don't
+                            -- prefetch.
+                            []
+
+                _ ->
+                    -- This covers the case where we don't have an entry for
+                    -- the next page, or it is something other than `NotAsked`.
+                    []
 
 
 {-| Fetch all existing pages.
