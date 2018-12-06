@@ -1,5 +1,5 @@
 module PaginatedData exposing
-    ( PaginatedData, emptyPaginatedData
+    ( PaginatedData, PaginatedWebData, emptyPaginatedData
     , get, getAll, getItemsByPager, getTotalCount, getPage
     , fetchAll, fetchPaginated
     , insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, setTotalCount, update
@@ -17,7 +17,7 @@ requests are in flight?
 
 ### Types
 
-@docs PaginatedData, emptyPaginatedData
+@docs PaginatedData, PaginatedWebData, emptyPaginatedData
 
 
 ### Accessors
@@ -46,7 +46,8 @@ import EveryDictList exposing (EveryDictList)
 import Html exposing (Html, a, li, text, ul)
 import Html.Attributes exposing (action, class, classList)
 import Html.Events exposing (onClick)
-import RemoteData exposing (RemoteData(..), WebData)
+import Http
+import RemoteData exposing (RemoteData(..))
 
 
 {-| Represents the status of paged data, where we may have some or all of the
@@ -59,11 +60,15 @@ The `key` is a type for looking up values. For instance, it might be an ID for
 the values. It is used in an `EveryDictList`, so it should be unique, and it
 must have work with `toString` in a way that produces unique results.
 
+The `err` is a type for tracking errors fetching pages. For the usual case
+of Http requests, this will be `Http.Error`. The `PaginatedWebData` type
+is a convenient alias for that common case.
+
 -}
-type PaginatedData key value
+type PaginatedData err key value
     = PaginatedData
         { data : EveryDictList key value
-        , pager : Pager key
+        , pager : Pager err key
 
         -- Represents the number of items which we would have once we receive
         -- all the pages, if we know that. (For instance, the backend might
@@ -73,17 +78,24 @@ type PaginatedData key value
         }
 
 
+{-| A convenient alias for the common case where your `PaginatedData`
+is fetched via `Http` requests, so your errors are `Http.Error`.
+-}
+type alias PaginatedWebData key value =
+    PaginatedData Http.Error key value
+
+
 {-| We don't export the `Pager` type so we can change it more easily
 if we need to. We do export `getPage` to access individual pages.
 -}
-type alias Pager key =
-    Dict Int (WebData ( key, key ))
+type alias Pager err key =
+    Dict Int (RemoteData err ( key, key ))
 
 
 {-| A starting point for a `PaginatedData`, with no values and no
 requests in progress.
 -}
-emptyPaginatedData : PaginatedData key value
+emptyPaginatedData : PaginatedData err key value
 emptyPaginatedData =
     PaginatedData
         { data = EveryDictList.empty
@@ -122,7 +134,7 @@ This function is a nice helper for the
 function, but is useful in other contexts as well.
 
 -}
-fetchPaginated : PaginatedData k v -> Int -> List Int
+fetchPaginated : PaginatedData e k v -> Int -> List Int
 fetchPaginated (PaginatedData existingDataAndPager) currentPage =
     let
         nextPage =
@@ -187,7 +199,7 @@ fetchPaginated (PaginatedData existingDataAndPager) currentPage =
 Next page is fetched as the previous one arrives successfully.
 
 -}
-fetchAll : PaginatedData k v -> List Int
+fetchAll : PaginatedData e k v -> List Int
 fetchAll (PaginatedData existingDataAndPager) =
     let
         -- Current page is actually the last page that had a successful
@@ -239,21 +251,21 @@ fetchAll (PaginatedData existingDataAndPager) =
 
 {-| Get a single value.
 -}
-get : key -> PaginatedData key value -> Maybe value
+get : key -> PaginatedData err key value -> Maybe value
 get key (PaginatedData dataAndPager) =
     EveryDictList.get key dataAndPager.data
 
 
 {-| Get all values.
 -}
-getAll : PaginatedData key value -> EveryDictList key value
+getAll : PaginatedData err key value -> EveryDictList key value
 getAll (PaginatedData dataAndPager) =
     dataAndPager.data
 
 
 {-| Update a single value.
 -}
-update : key -> (value -> value) -> PaginatedData key value -> PaginatedData key value
+update : key -> (value -> value) -> PaginatedData err key value -> PaginatedData err key value
 update key func ((PaginatedData dataAndPager) as wrapper) =
     case EveryDictList.get key dataAndPager.data of
         Nothing ->
@@ -269,7 +281,7 @@ indicated as first or last in the `pager`, is missing from the `data`.
 However, it can be used in situations where all the items are shown, without a
 pager, so removing will not have an affect on the pager.
 -}
-remove : key -> PaginatedData key value -> PaginatedData key value
+remove : key -> PaginatedData err key value -> PaginatedData err key value
 remove key (PaginatedData dataAndPager) =
     PaginatedData
         { dataAndPager | data = EveryDictList.remove key dataAndPager.data }
@@ -288,7 +300,7 @@ the first page is page 1).
     the keys corresponding to the first and last items on the page.
 
 -}
-getPage : Int -> PaginatedData key value -> WebData ( key, key )
+getPage : Int -> PaginatedData err key value -> RemoteData err ( key, key )
 getPage page (PaginatedData existingDataAndPager) =
     existingDataAndPager.pager
         |> Dict.get page
@@ -297,7 +309,7 @@ getPage page (PaginatedData existingDataAndPager) =
 
 {-| Get the Total count.
 -}
-getTotalCount : PaginatedData key value -> Maybe Int
+getTotalCount : PaginatedData err key value -> Maybe Int
 getTotalCount (PaginatedData existingDataAndPager) =
     existingDataAndPager.totalCount
 
@@ -316,7 +328,7 @@ know that no data was fetched. But if it was `Just 0`, we would know that we hav
 fetching the data successfully, but it resulted with no items.
 
 -}
-setTotalCount : Maybe Int -> PaginatedData key value -> PaginatedData key value
+setTotalCount : Maybe Int -> PaginatedData err key value -> PaginatedData err key value
 setTotalCount totalCount (PaginatedData existingDataAndPager) =
     PaginatedData
         { existingDataAndPager | totalCount = totalCount }
@@ -324,7 +336,7 @@ setTotalCount totalCount (PaginatedData existingDataAndPager) =
 
 {-| Used to indicate we're loading a page for the first time.
 -}
-setPageAsLoading : Int -> PaginatedData key value -> PaginatedData key value
+setPageAsLoading : Int -> PaginatedData err key value -> PaginatedData err key value
 setPageAsLoading pageNumber (PaginatedData existingDataAndPager) =
     let
         pagerUpdated =
@@ -338,13 +350,13 @@ setPageAsLoading pageNumber (PaginatedData existingDataAndPager) =
 -}
 insertMultiple :
     Int
-    -> WebData ( EveryDictList k v, Int )
+    -> RemoteData err ( EveryDictList k v, Int )
     -> (number -> a1)
     -> (( k, v ) -> Maybe a1)
     -> (k -> v -> EveryDictList a1 value -> EveryDictList a1 value)
     -> (k -> v -> ( a1, EveryDictList a1 value ) -> ( a1, EveryDictList a1 value ))
-    -> PaginatedData a1 value
-    -> PaginatedData a1 value
+    -> PaginatedData err a1 value
+    -> PaginatedData err a1 value
 insertMultiple pageNumber webdata defaultItemFunc getItemFunc insertFunc insertAfterFunc ((PaginatedData existingDataAndPager) as wrapper) =
     case webdata of
         RemoteData.Success ( items, totalCount ) ->
@@ -480,7 +492,7 @@ insertMultiple pageNumber webdata defaultItemFunc getItemFunc insertFunc insertA
 
 {-| @todo: Add docs, and improve
 -}
-insertDirectlyFromClient : key -> value -> PaginatedData key value -> PaginatedData key value
+insertDirectlyFromClient : key -> value -> PaginatedData err key value -> PaginatedData err key value
 insertDirectlyFromClient key value ((PaginatedData existingDataAndPager) as wrapper) =
     case get key wrapper of
         Just _ ->
@@ -526,7 +538,7 @@ insertDirectlyFromClient key value ((PaginatedData existingDataAndPager) as wrap
 
 {-| View helper.
 -}
-viewPager : PaginatedData k v -> Int -> (Int -> msg) -> Html msg
+viewPager : PaginatedData e k v -> Int -> (Int -> msg) -> Html msg
 viewPager (PaginatedData { pager }) currentPage func =
     if Dict.size pager <= 1 then
         text ""
@@ -556,7 +568,7 @@ viewPager (PaginatedData { pager }) currentPage func =
 
 {-| Get localy Items from the dict, by their page number.
 -}
-getItemsByPager : PaginatedData k v -> Int -> EveryDictList k v
+getItemsByPager : PaginatedData e k v -> Int -> EveryDictList k v
 getItemsByPager (PaginatedData { data, pager }) currentPage =
     if
         Dict.size pager <= 1
