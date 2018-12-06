@@ -6,8 +6,13 @@ module PaginatedData exposing
     , viewPager
     )
 
-{-| A `PaginatedData` represents a dict of values, that are paginated on the
-server.
+{-| By using something like
+[https://package.elm-lang.org/packages/krisajenkins/remotedata/latest](`RemoteData`),
+you can keep track of the status of a request for data: is it in progress?
+Completed? Did it fail? But what if the data comes back to you in pages?
+Keeping track of those pages is the purpose of `PaginatedData`. Which pages do
+you already have? What were their contents? Which pages do you still need? What
+requests are in flight?
 
 
 ### Types
@@ -41,33 +46,53 @@ import EveryDictList exposing (EveryDictList)
 import Html exposing (Html, a, li, text, ul)
 import Html.Attributes exposing (action, class, classList)
 import Html.Events exposing (onClick)
-import RemoteData exposing (WebData)
+import RemoteData exposing (RemoteData(..), WebData)
 
 
-{-| We need to know how much pages we have so we could lazy load.
-The pager holds the a tuple with the first and last Item key for that page, so
-it's easier to insert new items in the correct place.
+{-| Represents the status of paged data, where we may have some or all of the
+pages, and requests for one or more pages may be in-flight or
+have had errors.
+
+The `value` is the type of the value that you are fetching in pages.
+
+The `key` is a type for looking up values. For instance, it might be an ID for
+the values. It is used in an `EveryDictList`, so it should be unique, and it
+must have work with `toString` in a way that produces unique results.
+
 -}
 type PaginatedData key value
     = PaginatedData
         { data : EveryDictList key value
         , pager : Pager key
 
-        -- We keep the total count, so if we are asked to `fetchAll`, we can
-        -- calcualte how many pages we'll have based on the first page's result count.
-        -- We have this as a Maybe value, so it's easier to know if we already fetched
-        -- values (and there might be zero), or not.
+        -- Represents the number of items which we would have once we receive
+        -- all the pages, if we know that. (For instance, the backend might
+        -- tell us how many items there in total are while returning just one
+        -- page). Note that this is the item count, not the page count.
         , totalCount : Maybe Int
         }
 
 
-{-| Our pager type.
+{-| The `Pager` represents the status of each request for a page of data.
+The key for the `Dict` is the page number, which is 1-based. The value
+represents the status of a request for that page:
+
+  - `NotAsked` means that we haven't requested that page.
+
+  - `Loading` means that a request for that page is in progress.
+
+  - `Failure err` means that a request for that page has failed.
+
+  - `Success (key, key)` means that we received data. The two keys represent
+    the keys corresponding to the first and last items on the page.
+
 -}
 type alias Pager key =
     Dict Int (WebData ( key, key ))
 
 
-{-| Empty data, that has not been fetched yet.
+{-| A starting point for a `PaginatedData`, with no values and no
+requests in progress.
 -}
 emptyPaginatedData : PaginatedData key value
 emptyPaginatedData =
@@ -78,10 +103,34 @@ emptyPaginatedData =
         }
 
 
-{-| Fetch helper.
+{-| You supply the current page -- for instance, perhaps the page which the
+user has selected in the UI. You'll get back a list of pages which you need to
+fetch.
 
-@todo: Move <https://github.com/Gizra/elm-essentials/blob/4df1aba4ca15f52552e0ceca34495661826a9a4c/src/Gizra/Update.elm#L1> to own
-module.
+Say, for instance, that the current page is page 2.
+
+  - If you haven't asked for page 2 yet, then you'll get `[2]` back.
+
+  - If you successfully received page 2, and there are more items to fetch,
+    you'll get `[3]` back. This indicates that it would be a good idea to
+    fetch page 3 ... the user may want it soon!
+
+Presumably you are tracking in your model both the `PaginatedData` and some
+indicatin of which page the user is interested in right now. So, you can call
+this function to help determine what pages you ought to request right now.
+
+When you do issue the requests, it is important to call `setPageLoading` here!
+Otherwise, when you call this function again, you'll be told to fetch the page
+again. If you mark the page as `Loading`, then this function won't tell you to
+load it again.
+
+Note that this function does not tell you to re-fetch pages that have failed.
+When to do that is very much dependent on your situation, so you'll need to
+check for that yourself.
+
+This function is a nice helper for the
+[`andThenFetch`](https://package.elm-lang.org/packages/Gizra/elm-essentials/latest/Gizra-Update#andThenFetch)
+function, but is useful in other contexts as well.
 
 -}
 fetchPaginated : PaginatedData k v -> Int -> List Int
