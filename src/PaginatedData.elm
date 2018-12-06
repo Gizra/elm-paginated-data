@@ -226,20 +226,12 @@ fetchAll (PaginatedData existingDataAndPager) =
         nextPageData =
             Dict.get (currentPage + 1) existingDataAndPager.pager
                 |> Maybe.withDefault RemoteData.NotAsked
-
-        -- Prevent endless fetching in case the previous request has ended with `Failure`.
-        isPreviousRequestFailed =
-            RemoteData.isFailure currentPageData
     in
-    if not isPreviousRequestFailed then
-        if RemoteData.isNotAsked currentPageData then
-            [ currentPage ]
+    if RemoteData.isNotAsked currentPageData then
+        [ currentPage ]
 
-        else if hasNextPage && RemoteData.isNotAsked nextPageData then
-            [ currentPage + 1 ]
-
-        else
-            []
+    else if hasNextPage && RemoteData.isNotAsked nextPageData then
+        [ currentPage + 1 ]
 
     else
         []
