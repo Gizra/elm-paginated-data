@@ -266,26 +266,15 @@ setPageAsLoading pageNumber existingDataAndPager =
 {-| Insert multiple Items into the data and pager dict.
 -}
 insertMultiple :
-    identifier
-    -> Int
-    -> RemoteData.RemoteData e ( EveryDictList k v, Int )
+    Int
+    -> WebData ( EveryDictList k v, Int )
     -> (number -> a1)
     -> (( k, v ) -> Maybe a1)
     -> (k -> v -> EveryDictList a1 value -> EveryDictList a1 value)
     -> (k -> v -> ( a1, EveryDictList a1 value ) -> ( a1, EveryDictList a1 value ))
-    -> EveryDict identifier (RemoteData.RemoteData e (PaginatedData a1 value))
-    -> EveryDict identifier (RemoteData.RemoteData e (PaginatedData a1 value))
-insertMultiple identifier pageNumber webdata defaultItemFunc getItemFunc insertFunc insertAfterFunc dict =
-    let
-        existing =
-            EveryDict.get identifier dict
-                |> Maybe.withDefault (RemoteData.Success emptyPaginatedData)
-
-        existingDataAndPager =
-            existing
-                |> RemoteData.toMaybe
-                |> Maybe.withDefault emptyPaginatedData
-    in
+    -> PaginatedData a1 value
+    -> PaginatedData a1 value
+insertMultiple pageNumber webdata defaultItemFunc getItemFunc insertFunc insertAfterFunc existingDataAndPager =
     case webdata of
         RemoteData.Success ( items, totalCount ) ->
             let
@@ -397,22 +386,23 @@ insertMultiple identifier pageNumber webdata defaultItemFunc getItemFunc insertF
                     else
                         -- Update the existing pager dict.
                         EveryDict.insert pageNumber (RemoteData.Success ( firstItem, lastItem )) existingDataAndPager.pager
-
-                existingDataAndPagerUpdated =
-                    { existingDataAndPager
-                        | data = itemsUpdated
-                        , pager = pagerUpdated
-                        , totalCount = Just totalCount
-                    }
             in
-            EveryDict.insert identifier (RemoteData.Success existingDataAndPagerUpdated) dict
+            { existingDataAndPager
+                | data = itemsUpdated
+                , pager = pagerUpdated
+                , totalCount = Just totalCount
+            }
 
         RemoteData.Failure error ->
-            EveryDict.insert identifier (RemoteData.Failure error) dict
+            let
+                pager =
+                    EveryDict.insert pageNumber (RemoteData.Failure error) existingDataAndPager.pager
+            in
+            { existingDataAndPager | pager = pager }
 
         _ ->
             -- Satisfy the compiler.
-            dict
+            existingDataAndPager
 
 
 {-| @todo: Add docs, and improve
