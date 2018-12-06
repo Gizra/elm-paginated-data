@@ -36,7 +36,7 @@ server.
 
 -}
 
-import EveryDict exposing (EveryDict)
+import Dict exposing (Dict)
 import EveryDictList exposing (EveryDictList)
 import Html exposing (Html, a, li, text, ul)
 import Html.Attributes exposing (action, class, classList)
@@ -64,7 +64,7 @@ type PaginatedData key value
 {-| Our pager type.
 -}
 type alias Pager key =
-    EveryDict Int (WebData ( key, key ))
+    Dict Int (WebData ( key, key ))
 
 
 {-| Empty data, that has not been fetched yet.
@@ -73,7 +73,7 @@ emptyPaginatedData : PaginatedData key value
 emptyPaginatedData =
     PaginatedData
         { data = EveryDictList.empty
-        , pager = EveryDict.empty
+        , pager = Dict.empty
         , totalCount = Nothing
         }
 
@@ -88,14 +88,14 @@ fetchPaginated : PaginatedData k v -> Int -> List Int
 fetchPaginated (PaginatedData existingDataAndPager) currentPage =
     let
         currentPageData =
-            EveryDict.get currentPage existingDataAndPager.pager
+            Dict.get currentPage existingDataAndPager.pager
                 |> Maybe.withDefault RemoteData.NotAsked
 
         hasNextPage =
-            EveryDict.member (currentPage + 1) existingDataAndPager.pager
+            Dict.member (currentPage + 1) existingDataAndPager.pager
 
         nextPageData =
-            EveryDict.get (currentPage + 1) existingDataAndPager.pager
+            Dict.get (currentPage + 1) existingDataAndPager.pager
                 |> Maybe.withDefault RemoteData.NotAsked
 
         -- Prevent endless fetching in case the previous request has ended with `Failure`.
@@ -142,7 +142,7 @@ fetchAll (PaginatedData existingDataAndPager) =
         -- response.
         currentPage =
             existingDataAndPager.pager
-                |> EveryDict.toList
+                |> Dict.toList
                 -- Keep only successs values.
                 |> List.filter (\( _, webData ) -> RemoteData.isSuccess webData)
                 -- Sort the list by page number, and get the highest value.
@@ -153,14 +153,14 @@ fetchAll (PaginatedData existingDataAndPager) =
                 |> Maybe.withDefault 1
 
         currentPageData =
-            EveryDict.get currentPage existingDataAndPager.pager
+            Dict.get currentPage existingDataAndPager.pager
                 |> Maybe.withDefault RemoteData.NotAsked
 
         hasNextPage =
-            EveryDict.member (currentPage + 1) existingDataAndPager.pager
+            Dict.member (currentPage + 1) existingDataAndPager.pager
 
         nextPageData =
-            EveryDict.get (currentPage + 1) existingDataAndPager.pager
+            Dict.get (currentPage + 1) existingDataAndPager.pager
                 |> Maybe.withDefault RemoteData.NotAsked
 
         -- Prevent endless fetching in case the previous request has ended with `Failure`.
@@ -263,7 +263,7 @@ setPageAsLoading : Int -> PaginatedData key value -> PaginatedData key value
 setPageAsLoading pageNumber (PaginatedData existingDataAndPager) =
     let
         pagerUpdated =
-            EveryDict.insert pageNumber RemoteData.Loading existingDataAndPager.pager
+            Dict.insert pageNumber RemoteData.Loading existingDataAndPager.pager
     in
     PaginatedData
         { existingDataAndPager | pager = pagerUpdated }
@@ -290,7 +290,7 @@ insertMultiple pageNumber webdata defaultItemFunc getItemFunc insertFunc insertA
                             (\index accum ->
                                 let
                                     pagerInfo =
-                                        EveryDict.get (pageNumber - 1) existingDataAndPager.pager
+                                        Dict.get (pageNumber - 1) existingDataAndPager.pager
                                             |> Maybe.andThen RemoteData.toMaybe
                                 in
                                 case accum of
@@ -368,9 +368,9 @@ insertMultiple pageNumber webdata defaultItemFunc getItemFunc insertFunc insertA
                 pagerUpdated =
                     if totalCount == 0 then
                         -- Update the pager, so we won't continue fetching.
-                        EveryDict.insert pageNumber (RemoteData.Success ( firstItem, lastItem )) existingDataAndPager.pager
+                        Dict.insert pageNumber (RemoteData.Success ( firstItem, lastItem )) existingDataAndPager.pager
 
-                    else if EveryDict.size existingDataAndPager.pager <= 1 then
+                    else if Dict.size existingDataAndPager.pager <= 1 then
                         -- If the pager dict was not built yet, or we just have the
                         -- first page `Loading` - before we knew how many items we'll
                         -- have in total.
@@ -385,13 +385,13 @@ insertMultiple pageNumber webdata defaultItemFunc getItemFunc insertFunc insertA
                                             else
                                                 RemoteData.NotAsked
                                     in
-                                    EveryDict.insert index value accum
+                                    Dict.insert index value accum
                                 )
-                                EveryDict.empty
+                                Dict.empty
 
                     else
                         -- Update the existing pager dict.
-                        EveryDict.insert pageNumber (RemoteData.Success ( firstItem, lastItem )) existingDataAndPager.pager
+                        Dict.insert pageNumber (RemoteData.Success ( firstItem, lastItem )) existingDataAndPager.pager
             in
             PaginatedData
                 { existingDataAndPager
@@ -403,7 +403,7 @@ insertMultiple pageNumber webdata defaultItemFunc getItemFunc insertFunc insertA
         RemoteData.Failure error ->
             let
                 pager =
-                    EveryDict.insert pageNumber (RemoteData.Failure error) existingDataAndPager.pager
+                    Dict.insert pageNumber (RemoteData.Failure error) existingDataAndPager.pager
             in
             PaginatedData
                 { existingDataAndPager | pager = pager }
@@ -427,7 +427,7 @@ insertDirectlyFromClient key value ((PaginatedData existingDataAndPager) as wrap
             let
                 ( page, pager ) =
                     existingDataAndPager.pager
-                        |> EveryDict.toList
+                        |> Dict.toList
                         |> List.sortBy (\( key, _ ) -> key)
                         |> List.reverse
                         |> List.head
@@ -454,7 +454,7 @@ insertDirectlyFromClient key value ((PaginatedData existingDataAndPager) as wrap
             PaginatedData
                 { existingDataAndPager
                     | data = EveryDictList.insert key value existingDataAndPager.data
-                    , pager = EveryDict.insert page pagerUpdated existingDataAndPager.pager
+                    , pager = Dict.insert page pagerUpdated existingDataAndPager.pager
                     , totalCount = Just <| totalCount + 1
                 }
 
@@ -463,14 +463,14 @@ insertDirectlyFromClient key value ((PaginatedData existingDataAndPager) as wrap
 -}
 viewPager : PaginatedData k v -> Int -> (Int -> msg) -> Html msg
 viewPager (PaginatedData { pager }) currentPage func =
-    if EveryDict.size pager <= 1 then
+    if Dict.size pager <= 1 then
         text ""
 
     else
         -- @todo :Allow adding own attributes to ul/ li
         ul [ class "pagination" ]
             (pager
-                |> EveryDict.keys
+                |> Dict.keys
                 |> List.sort
                 |> List.map
                     (\pageNumber ->
@@ -494,7 +494,7 @@ viewPager (PaginatedData { pager }) currentPage func =
 getItemsByPager : PaginatedData k v -> Int -> EveryDictList k v
 getItemsByPager (PaginatedData { data, pager }) currentPage =
     if
-        EveryDict.size pager <= 1
+        Dict.size pager <= 1
         -- We have only a single page.
     then
         data
@@ -502,7 +502,7 @@ getItemsByPager (PaginatedData { data, pager }) currentPage =
     else
         let
             pagerInfo =
-                EveryDict.get currentPage pager
+                Dict.get currentPage pager
                     |> Maybe.withDefault RemoteData.NotAsked
         in
         case pagerInfo of
