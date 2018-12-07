@@ -1,0 +1,32 @@
+{
+  "name": "elm-paginated-data",
+  "version": "1.0.0",
+  "description": "Fetch and view paginated data",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "elm": "^0.18.0",
+    "elm-test": "^0.18.7",
+    "elm-verify-examples": "^1.0.2",
+    "elm-format": "0.8.1"
+  },
+  "scripts": {
+    "test": "elm-format --validate src tests && elm-verify-examples && elm-test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Gizra/elm-paginated-data.git"
+  },
+  "author": [
+      "Ryan Rempel <ryan@gizra.com>",
+      "Amitai Burstein <amitai@gizra.com>"
+  ],
+  "license": "BSD3",
+  "bugs": {
+    "url": "https://github.com/Gizra/elm-paginated-data/issues"
+  },
+  "homepage": "https://github.com/Gizra/elm-paginated-data#readme"
+}
