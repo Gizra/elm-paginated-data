@@ -555,7 +555,27 @@ insertDirectlyFromClient key value ((PaginatedData existingDataAndPager) as wrap
                 }
 
 
-{-| View helper.
+{-| Generate some HTML with links to each page.
+
+  - The second parameter is the current page number (1-based). That page will
+    be given an "active" class, and will not be clickable.
+
+  - The third parameter is a function that takes a page the user clicks
+    on, and returns a `msg` that will navigate to that page.
+
+You'll get back some Html that looks something like this (assuming
+there are three pages and the current page is page 2).
+
+    ul
+        [ class "pagination" ]
+        [ li [] [ onClick ... ] [ text "1" ]
+        , li [] [ class "active" ] [ text "2" ]
+        , li [] [ onClick ... ] [ text "3" ]
+        ]
+
+If we haven't attempted to fetch any pages yet, you'll get back an empty text
+node.
+
 -}
 viewPager : PaginatedData e k v -> Int -> (Int -> msg) -> Html msg
 viewPager (PaginatedData { pager }) currentPage func =
