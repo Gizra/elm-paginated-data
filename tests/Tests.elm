@@ -1,16 +1,43 @@
-module Tests exposing (testFetchAll, testFetchPaginated, testGet, testGetAll, testUpdate)
+module Tests exposing
+    ( testFetchAll
+    , testFetchPaginated
+    , testGet
+    , testGetAll
+    , testGetItemsByPager
+    , testGetPage
+    , testGetTotalCount
+    , testRemove
+    , testSetPageAsLoading
+    , testSetTotalCount
+    , testUpdate
+    )
 
 import EveryDictList
 import Expect
 import Fuzz exposing (..)
 import PaginatedData exposing (..)
+import RemoteData exposing (RemoteData(..))
 import Test exposing (..)
+
+
+{-| Fuzz a realistic page number. Not negative, for instance.
+-}
+fuzzPage : Fuzzer Int
+fuzzPage =
+    Fuzz.intRange 1 100
+
+
+{-| Fuzz a realistic item count. Again, not negative.
+-}
+fuzzCount : Fuzzer Int
+fuzzCount =
+    Fuzz.intRange 0 1000
 
 
 testFetchPaginated : Test
 testFetchPaginated =
     describe "fetchPaginated"
-        [ fuzz Fuzz.int "If empty, should fetch whatever page we ask for" <|
+        [ fuzz fuzzPage "If empty, should fetch whatever page we ask for" <|
             \current ->
                 fetchPaginated emptyPaginatedData current
                     |> Expect.equal [ current ]
@@ -113,5 +140,117 @@ testUpdate =
                     |> Expect.equal
                         [ ( "key", 18 )
                         , ( "key2", 21 )
+                        ]
+        ]
+
+
+testRemove : Test
+testRemove =
+    describe "remove"
+        [ test "Removing something from an empty pager should do nothing" <|
+            \_ ->
+                emptyPaginatedData
+                    |> remove "key"
+                    |> getAll
+                    |> EveryDictList.size
+                    |> Expect.equal 0
+        , test "Removing an existing value should work" <|
+            \_ ->
+                emptyPaginatedData
+                    |> insertDirectlyFromClient "key" 17
+                    |> insertDirectlyFromClient "key2" 21
+                    |> remove "key"
+                    |> getAll
+                    |> EveryDictList.toList
+                    |> Expect.equal
+                        [ ( "key2", 21 )
+                        ]
+        ]
+
+
+testGetPage : Test
+testGetPage =
+    describe "getPage"
+        [ fuzz fuzzPage "Getting any page from an empty pager should be NotAsked" <|
+            \page ->
+                getPage page emptyPaginatedData
+                    |> Expect.equal NotAsked
+        , test "Getting an existing page should work" <|
+            \_ ->
+                emptyPaginatedData
+                    |> insertDirectlyFromClient "key" "value"
+                    |> insertDirectlyFromClient "key2" "value2"
+                    |> getPage 1
+                    |> Expect.equal (Success ( "key", "key2" ))
+        ]
+
+
+testGetTotalCount : Test
+testGetTotalCount =
+    describe "getTotalCount"
+        [ test "Total count of an empty pager should be Nothing" <|
+            \_ ->
+                getTotalCount emptyPaginatedData
+                    |> Expect.equal Nothing
+        , test "Total count of a pager with a few values should work" <|
+            \_ ->
+                emptyPaginatedData
+                    |> insertDirectlyFromClient "key" "value"
+                    |> insertDirectlyFromClient "key2" "value2"
+                    |> getTotalCount
+                    |> Expect.equal (Just 2)
+        ]
+
+
+testSetTotalCount : Test
+testSetTotalCount =
+    fuzz (Fuzz.maybe fuzzCount) "Setting the total count should work" <|
+        \count ->
+            emptyPaginatedData
+                |> setTotalCount count
+                |> getTotalCount
+                |> Expect.equal count
+
+
+testSetPageAsLoading : Test
+testSetPageAsLoading =
+    fuzz fuzzPage "Setting any page as loading should work" <|
+        \page ->
+            emptyPaginatedData
+                |> setPageAsLoading page
+                |> getPage page
+                |> Expect.equal Loading
+
+
+testGetItemsByPager : Test
+testGetItemsByPager =
+    describe "getItemsByPager"
+        [ test "An empty pager has no items" <|
+            \_ ->
+                emptyPaginatedData
+                    |> flip getItemsByPager 1
+                    |> EveryDictList.size
+                    |> Expect.equal 0
+        , test "Single page" <|
+            \_ ->
+                emptyPaginatedData
+                    |> insertDirectlyFromClient "key" "value"
+                    |> insertDirectlyFromClient "key2" "value2"
+                    |> flip getItemsByPager 1
+                    |> EveryDictList.toList
+                    |> Expect.equal
+                        [ ( "key", "value" )
+                        , ( "key2", "value2" )
+                        ]
+        , fuzz fuzzPage "If we only have one page, requesting any page should get page 1" <|
+            \page ->
+                emptyPaginatedData
+                    |> insertDirectlyFromClient "key" "value"
+                    |> insertDirectlyFromClient "key2" "value2"
+                    |> flip getItemsByPager page
+                    |> EveryDictList.toList
+                    |> Expect.equal
+                        [ ( "key", "value" )
+                        , ( "key2", "value2" )
                         ]
         ]
