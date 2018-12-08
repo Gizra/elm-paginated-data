@@ -509,7 +509,15 @@ insertMultiple pageNumber webdata defaultItemFunc getItemFunc insertFunc insertA
             wrapper
 
 
-{-| @todo: Add docs, and improve
+{-| Insert a value obtained directly from the client.
+
+  - If the key already exists, we ignore the new value. (You could use `update`
+    to change an existing value if you like).
+
+  - If there are no pages, we make one, and put the new value there.
+
+  - Otherwise, we add the value to the last page.
+
 -}
 insertDirectlyFromClient : key -> value -> PaginatedData err key value -> PaginatedData err key value
 insertDirectlyFromClient key value ((PaginatedData existingDataAndPager) as wrapper) =

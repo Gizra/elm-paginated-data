@@ -6,6 +6,7 @@ module Tests exposing
     , testGetItemsByPager
     , testGetPage
     , testGetTotalCount
+    , testInsertDirectlyFromClient
     , testRemove
     , testSetPageAsLoading
     , testSetTotalCount
@@ -220,6 +221,56 @@ testSetPageAsLoading =
                 |> setPageAsLoading page
                 |> getPage page
                 |> Expect.equal Loading
+
+
+testInsertDirectlyFromClient : Test
+testInsertDirectlyFromClient =
+    describe "insertDirectlyFromClient"
+        [ test "Inserting into empty pager should work" <|
+            \_ ->
+                emptyPaginatedData
+                    |> insertDirectlyFromClient "key" "value"
+                    |> Expect.all
+                        [ \pager ->
+                            getAll pager
+                                |> EveryDictList.toList
+                                |> Expect.equal
+                                    [ ( "key", "value" ) ]
+                        , \pager ->
+                            getTotalCount pager
+                                |> Expect.equal (Just 1)
+                        , \pager ->
+                            getPage 1 pager
+                                |> Expect.equal (Success ( "key", "key" ))
+                        ]
+        , test "If we have 1 page, should insert on that page" <|
+            \_ ->
+                emptyPaginatedData
+                    |> insertDirectlyFromClient "key" "value"
+                    |> insertDirectlyFromClient "key2" "value2"
+                    |> Expect.all
+                        [ \pager ->
+                            getAll pager
+                                |> EveryDictList.toList
+                                |> Expect.equal
+                                    [ ( "key", "value" )
+                                    , ( "key2", "value2" )
+                                    ]
+                        , \pager ->
+                            getTotalCount pager
+                                |> Expect.equal (Just 2)
+                        , \pager ->
+                            getPage 1 pager
+                                |> Expect.equal (Success ( "key", "key2" ))
+                        ]
+        , test "Ignore the new value if we already have the key" <|
+            \_ ->
+                emptyPaginatedData
+                    |> insertDirectlyFromClient "key" "old value"
+                    |> insertDirectlyFromClient "key" "new value"
+                    |> get "key"
+                    |> Expect.equal (Just "old value")
+        ]
 
 
 testGetItemsByPager : Test
