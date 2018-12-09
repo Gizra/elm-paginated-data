@@ -7,6 +7,7 @@ module Tests exposing
     , testGetPage
     , testGetTotalCount
     , testInsertDirectlyFromClient
+    , testInsertMultiple
     , testRemove
     , testSetPageAsLoading
     , testSetTotalCount
@@ -16,6 +17,7 @@ module Tests exposing
 import EveryDictList
 import Expect
 import Fuzz exposing (..)
+import Http
 import PaginatedData exposing (..)
 import RemoteData exposing (RemoteData(..))
 import Test exposing (..)
@@ -221,6 +223,24 @@ testSetPageAsLoading =
                 |> setPageAsLoading page
                 |> getPage page
                 |> Expect.equal Loading
+
+
+testInsertMultiple : Test
+testInsertMultiple =
+    describe "insertMultiple"
+        [ test "Indicating that a page is Loading should leave the pager unchanged" <|
+            \_ ->
+                emptyPaginatedData
+                    |> insertMultiple 1 Loading
+                    |> getPage 1
+                    |> Expect.equal NotAsked
+        , test "Indicating that a page has Failed should work" <|
+            \_ ->
+                emptyPaginatedData
+                    |> insertMultiple 1 (Failure Http.Timeout)
+                    |> getPage 1
+                    |> Expect.equal (Failure Http.Timeout)
+        ]
 
 
 testInsertDirectlyFromClient : Test

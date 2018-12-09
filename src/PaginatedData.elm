@@ -365,18 +365,32 @@ setPageAsLoading pageNumber (PaginatedData existingDataAndPager) =
         { existingDataAndPager | pager = pagerUpdated }
 
 
-{-| Insert multiple Items into the data and pager dict.
+{-| When you receive a response from the backend to your request for a page of
+data, use this function to update the `PaginatedData` with the response.
+
+  - The first parameter is the page number which you requested (1-based).
+
+  - The second parameter is the response received from the backend.
+
+    In the `Success` case, the `EveryDictList` is the data you received, and
+    the `Int` is the total count of all items available on the backend (not
+    just the items on this page). We will update the `PaginatedData` to reflect
+    the successful request.
+
+    If you provide a `Failure` response, we will update the page to record the
+    failed request.
+
+    If you provide `Loading` or `NotAsked`, we will return the `PaginatedData`
+    unchanged. (You can use `setPageAsLoading` to return a page to `Loading`
+    status.)
+
 -}
 insertMultiple :
     Int
-    -> RemoteData err ( EveryDictList k v, Int )
-    -> (number -> a1)
-    -> (( k, v ) -> Maybe a1)
-    -> (k -> v -> EveryDictList a1 value -> EveryDictList a1 value)
-    -> (k -> v -> ( a1, EveryDictList a1 value ) -> ( a1, EveryDictList a1 value ))
-    -> PaginatedData err a1 value
-    -> PaginatedData err a1 value
-insertMultiple pageNumber webdata defaultItemFunc getItemFunc insertFunc insertAfterFunc ((PaginatedData existingDataAndPager) as wrapper) =
+    -> RemoteData err ( EveryDictList key value, Int )
+    -> PaginatedData err key value
+    -> PaginatedData err key value
+insertMultiple pageNumber webdata ((PaginatedData existingDataAndPager) as wrapper) =
     case webdata of
         Success ( items, totalCount ) ->
             let
@@ -418,7 +432,7 @@ insertMultiple pageNumber webdata defaultItemFunc getItemFunc insertFunc insertA
                             else
                                 -- This is the first page, we can enter by order.
                                 EveryDictList.foldl
-                                    insertFunc
+                                    EveryDictList.insert
                                     existingDataAndPager.data
                                     items
 
@@ -433,10 +447,9 @@ insertMultiple pageNumber webdata defaultItemFunc getItemFunc insertFunc insertA
                             -- the next item will result with [1, 2, 3, 5, 6] and the process
                             -- will end as expected with [1, 2, 3, 4, 5, 6].
                             EveryDictList.foldl
-                                insertAfterFunc
-                                ( previousItemLastUuid, existingDataAndPager.data )
+                                (EveryDictList.insertAfter previousItemLastUuid)
+                                existingDataAndPager.data
                                 (EveryDictList.reverse items)
-                                |> Tuple.second
 
                 totalItems =
                     EveryDictList.size items
@@ -449,45 +462,52 @@ insertMultiple pageNumber webdata defaultItemFunc getItemFunc insertFunc insertA
 
                 -- Get the first and last item, which might be the same one, in case
                 -- we have a single item.
-                ( firstItem, lastItem ) =
-                    ( items
-                        |> EveryDictList.getAt 0
-                        |> Maybe.andThen getItemFunc
-                        |> Maybe.withDefault (defaultItemFunc 0)
-                    , items
-                        -- If we have 25 items, the last one will be in index 24.
-                        |> EveryDictList.getAt (totalItems - 1)
-                        |> Maybe.andThen getItemFunc
-                        |> Maybe.withDefault (defaultItemFunc 0)
-                    )
+                firstAndLastItem =
+                    Maybe.map2 (,)
+                        (items
+                            |> EveryDictList.getAt 0
+                            |> Maybe.map Tuple.first
+                        )
+                        (items
+                            -- If we have 25 items, the last one will be in index 24.
+                            |> EveryDictList.getAt (totalItems - 1)
+                            |> Maybe.map Tuple.first
+                        )
 
                 pagerUpdated =
-                    if totalCount == 0 then
-                        -- Update the pager, so we won't continue fetching.
-                        Dict.insert pageNumber (Success ( firstItem, lastItem )) existingDataAndPager.pager
+                    case firstAndLastItem of
+                        Nothing ->
+                            -- If there are no items on this page, then just delete the
+                            -- page in the pager ... clearly it does not really exist.
+                            Dict.remove pageNumber existingDataAndPager.pager
 
-                    else if Dict.size existingDataAndPager.pager <= 1 then
-                        -- If the pager dict was not built yet, or we just have the
-                        -- first page `Loading` - before we knew how many items we'll
-                        -- have in total.
-                        List.range 1 totalPages
-                            |> List.foldl
-                                (\index accum ->
-                                    let
-                                        value =
-                                            if index == pageNumber then
-                                                Success ( firstItem, lastItem )
+                        Just ( firstItem, lastItem ) ->
+                            if totalCount == 0 then
+                                -- Update the pager, so we won't continue fetching.
+                                Dict.insert pageNumber (Success ( firstItem, lastItem )) existingDataAndPager.pager
 
-                                            else
-                                                NotAsked
-                                    in
-                                    Dict.insert index value accum
-                                )
-                                Dict.empty
+                            else if Dict.size existingDataAndPager.pager <= 1 then
+                                -- If the pager dict was not built yet, or we just have the
+                                -- first page `Loading` - before we knew how many items we'll
+                                -- have in total.
+                                List.range 1 totalPages
+                                    |> List.foldl
+                                        (\index accum ->
+                                            let
+                                                value =
+                                                    if index == pageNumber then
+                                                        Success ( firstItem, lastItem )
 
-                    else
-                        -- Update the existing pager dict.
-                        Dict.insert pageNumber (Success ( firstItem, lastItem )) existingDataAndPager.pager
+                                                    else
+                                                        NotAsked
+                                            in
+                                            Dict.insert index value accum
+                                        )
+                                        Dict.empty
+
+                            else
+                                -- Update the existing pager dict.
+                                Dict.insert pageNumber (Success ( firstItem, lastItem )) existingDataAndPager.pager
             in
             PaginatedData
                 { existingDataAndPager
@@ -504,8 +524,10 @@ insertMultiple pageNumber webdata defaultItemFunc getItemFunc insertFunc insertA
             PaginatedData
                 { existingDataAndPager | pager = pager }
 
-        _ ->
-            -- Satisfy the compiler.
+        Loading ->
+            wrapper
+
+        NotAsked ->
             wrapper
 
 
