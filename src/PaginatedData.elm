@@ -137,8 +137,8 @@ If you'd like to fetch all the pages (one at a time), rather than just the
 current page and possibly the next page, take a look at `fetchAll` instead.
 
 -}
-fetchPaginated : PaginatedData e k v -> Int -> List Int
-fetchPaginated (PaginatedData existingDataAndPager) currentPage =
+fetchPaginated : Int -> PaginatedData e k v -> List Int
+fetchPaginated currentPage (PaginatedData existingDataAndPager) =
     let
         nextPage =
             currentPage + 1
@@ -587,11 +587,11 @@ insertDirectlyFromClient key value ((PaginatedData existingDataAndPager) as wrap
 
 {-| Generate some HTML with links to each page.
 
+  - The first parameter is a function that takes a page the user clicks
+    on, and returns a `msg` that will navigate to that page.
+
   - The second parameter is the current page number (1-based). That page will
     be given an "active" class, and will not be clickable.
-
-  - The third parameter is a function that takes a page the user clicks
-    on, and returns a `msg` that will navigate to that page.
 
 You'll get back some Html that looks something like this (assuming
 there are three pages and the current page is page 2).
@@ -607,8 +607,8 @@ If we haven't attempted to fetch any pages yet, you'll get back an empty text
 node.
 
 -}
-viewPager : PaginatedData e k v -> Int -> (Int -> msg) -> Html msg
-viewPager (PaginatedData { pager }) currentPage func =
+viewPager : (Int -> msg) -> Int -> PaginatedData e k v -> Html msg
+viewPager func currentPage (PaginatedData { pager }) =
     if Dict.size pager <= 1 then
         text ""
 
@@ -637,8 +637,8 @@ viewPager (PaginatedData { pager }) currentPage func =
 
 {-| Get all the items which are on the specified page (1-based).
 -}
-getItemsByPager : PaginatedData e k v -> Int -> EveryDictList k v
-getItemsByPager (PaginatedData { data, pager }) currentPage =
+getItemsByPager : Int -> PaginatedData e k v -> EveryDictList k v
+getItemsByPager currentPage (PaginatedData { data, pager }) =
     if
         Dict.size pager <= 1
         -- We have only a single page.

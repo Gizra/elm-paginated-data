@@ -42,25 +42,25 @@ testFetchPaginated =
     describe "fetchPaginated"
         [ fuzz fuzzPage "If empty, should fetch whatever page we ask for" <|
             \current ->
-                fetchPaginated emptyPaginatedData current
+                fetchPaginated current emptyPaginatedData
                     |> Expect.equal [ current ]
         , test "If we're loading the current page, should do nothing" <|
             \_ ->
                 emptyPaginatedData
                     |> setPageAsLoading 1
-                    |> flip fetchPaginated 1
+                    |> fetchPaginated 1
                     |> Expect.equal []
         , test "If we have the current page, and we have no entries for other pages, we should not fetch the next page" <|
             \_ ->
                 emptyPaginatedData
                     |> insertDirectlyFromClient "key" "value"
-                    |> flip fetchPaginated 1
+                    |> fetchPaginated 1
                     |> Expect.equal []
         , test "If we directly request a page we don't expect to exist, we should get it even if we have other pages" <|
             \_ ->
                 emptyPaginatedData
                     |> insertDirectlyFromClient "key" "value"
-                    |> flip fetchPaginated 2
+                    |> fetchPaginated 2
                     |> Expect.equal [ 2 ]
         ]
 
@@ -299,7 +299,7 @@ testGetItemsByPager =
         [ test "An empty pager has no items" <|
             \_ ->
                 emptyPaginatedData
-                    |> flip getItemsByPager 1
+                    |> getItemsByPager 1
                     |> EveryDictList.size
                     |> Expect.equal 0
         , test "Single page" <|
@@ -307,7 +307,7 @@ testGetItemsByPager =
                 emptyPaginatedData
                     |> insertDirectlyFromClient "key" "value"
                     |> insertDirectlyFromClient "key2" "value2"
-                    |> flip getItemsByPager 1
+                    |> getItemsByPager 1
                     |> EveryDictList.toList
                     |> Expect.equal
                         [ ( "key", "value" )
@@ -318,7 +318,7 @@ testGetItemsByPager =
                 emptyPaginatedData
                     |> insertDirectlyFromClient "key" "value"
                     |> insertDirectlyFromClient "key2" "value2"
-                    |> flip getItemsByPager page
+                    |> getItemsByPager page
                     |> EveryDictList.toList
                     |> Expect.equal
                         [ ( "key", "value" )
