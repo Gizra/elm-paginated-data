@@ -1,6 +1,6 @@
 module PaginatedData exposing
     ( PaginatedData, PaginatedWebData, emptyPaginatedData
-    , get, getAll, getItemsByPager, getTotalCount, getPage
+    , get, getAll, getItemsByPager, getTotalCount, getPage, getLocal
     , fetchAll, fetchPaginated
     , insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, setTotalCount, update
     , viewPager
@@ -22,7 +22,7 @@ requests are in flight?
 
 ### Accessors
 
-@docs get, getAll, getItemsByPager, getTotalCount, getPage
+@docs get, getAll, getItemsByPager, getTotalCount, getPage, getLocal
 
 
 ### Fetch helpers
@@ -51,14 +51,13 @@ import RemoteData exposing (RemoteData(..))
 
 
 {-| Represents the status of paged data, where we may have some or all of the
-pages, and requests for one or more pages may be in-flight or
-have had errors.
+pages, and requests for one or more pages may be in-flight or have had errors.
 
 The `value` is the type of the value that you are fetching in pages.
 
 The `key` is a type for looking up values. For instance, it might be an ID for
-the values. It is used in an `EveryDictList`, so it should be unique, and it
-must have work with `toString` in a way that produces unique results.
+the values. It is used as the key for `EveryDictList`, so it should be unique,
+and it must have work with `toString` in a way that produces unique results.
 
 The `err` is a type for tracking errors fetching pages. For the usual case
 of Http requests, this will be `Http.Error`. The `PaginatedWebData` type
@@ -67,15 +66,42 @@ is a convenient alias for that common case.
 -}
 type PaginatedData err key value
     = PaginatedData
-        { data : EveryDictList key value
-        , pager : Pager err key
+        { pager : Pager err key value
 
         -- Represents the number of items which we would have once we receive
         -- all the pages, if we know that. (For instance, the backend might
         -- tell us how many items there in total are while returning just one
         -- page). Note that this is the item count, not the page count.
         , totalCount : Maybe Int
+
+        -- Local values which were **not** obtained from the backend, and thus
+        -- are not on any page. These are not included in the totalCount, since
+        -- that is what the backend reports.
+        , local : EveryDictList key value
         }
+
+
+type alias Pager err key value =
+    Dict Int (RemoteData err (EveryDictList key value))
+
+
+{-| An internal function to give us the first page which was successfully
+fetched. We use this, for instance, to infer the page size. We can't infer it
+from the last page, since that might be a partial page.
+-}
+firstPageWithItems : Pager err key value -> Maybe ( Int, EveryDictList key value )
+firstPageWithItems =
+    Dict.foldl
+        (\page remoteData accum ->
+            case accum of
+                Just _ ->
+                    accum
+
+                Nothing ->
+                    RemoteData.map (\data -> ( page, data )) remoteData
+                        |> RemoteData.toMaybe
+        )
+        Nothing
 
 
 {-| A convenient alias for the common case where your `PaginatedData`
@@ -85,22 +111,15 @@ type alias PaginatedWebData key value =
     PaginatedData Http.Error key value
 
 
-{-| We don't export the `Pager` type so we can change it more easily
-if we need to. We do export `getPage` to access individual pages.
--}
-type alias Pager err key =
-    Dict Int (RemoteData err ( key, key ))
-
-
 {-| A starting point for a `PaginatedData`, with no values and no
 requests in progress.
 -}
 emptyPaginatedData : PaginatedData err key value
 emptyPaginatedData =
     PaginatedData
-        { data = EveryDictList.empty
-        , pager = Dict.empty
+        { pager = Dict.empty
         , totalCount = Nothing
+        , local = EveryDictList.empty
         }
 
 
@@ -171,25 +190,7 @@ fetchPaginated currentPage (PaginatedData existingDataAndPager) =
                 Just NotAsked ->
                     -- We only try to fetch the next page if we actually have
                     -- an entry in the pager for it, and it is a `NotAsked`.
-                    -- This implies that we've literally created an entry for
-                    -- every page we expect. Should verify that below -- if
-                    -- we don't pre-create a bunch of `NotAsked` entries, then
-                    -- this doesn't make sense.
-                    case existingDataAndPager.totalCount of
-                        Just count ->
-                            -- We also check whether we've already received
-                            -- all the items we expect. In that case, we don't
-                            -- try to pre-fetch.
-                            if EveryDictList.size existingDataAndPager.data < count then
-                                [ nextPage ]
-
-                            else
-                                []
-
-                        Nothing ->
-                            -- If we don't know the total count, we don't
-                            -- prefetch.
-                            []
+                    [ nextPage ]
 
                 _ ->
                     -- This covers the case where we don't have an entry for
@@ -260,46 +261,106 @@ fetchAll (PaginatedData existingDataAndPager) =
 -- CRUD
 
 
-{-| Get a single value.
+{-| Get a single value, whether it is local or on a page.
+
+We assume that keys are unique. If not, we will return a value with that key,
+but which one is undefined.
+
 -}
 get : key -> PaginatedData err key value -> Maybe value
-get key (PaginatedData dataAndPager) =
-    EveryDictList.get key dataAndPager.data
+get key (PaginatedData data) =
+    -- We iterate through the pages looking for the key. If
+    -- necessary, we could optimize this by keeping an index
+    -- of which page each key is on.
+    Dict.foldl
+        (\page data accum ->
+            case accum of
+                Just found ->
+                    -- We don't keep testing once we find one.
+                    accum
+
+                Nothing ->
+                    case data of
+                        Success items ->
+                            EveryDictList.get key items
+
+                        _ ->
+                            Nothing
+        )
+        -- We start by looking in local, and then iterate through
+        -- the pages.
+        (EveryDictList.get key data.local)
+        data.pager
 
 
-{-| Get all values.
+{-| Get all values, whether from a page or local.
+
+We assume that keys are unique. If not, we will include one value for each key,
+but it is undefined which value will be used.
+
+The values will be returned in order by page, with local values
+at the end.
+
 -}
 getAll : PaginatedData err key value -> EveryDictList key value
-getAll (PaginatedData dataAndPager) =
-    dataAndPager.data
+getAll (PaginatedData data) =
+    -- We do a `foldr` so that we can append to the beginning of
+    -- the DictList, which is faster than appending at the end.
+    Dict.foldr
+        (\page data accum ->
+            case data of
+                Success items ->
+                    EveryDictList.append items accum
+
+                _ ->
+                    accum
+        )
+        data.local
+        data.pager
 
 
-{-| Update a single value. If they key is not found, the `PaginatedData` is
-returned unchanged.
+{-| A convenience to map over our internal pages.
+-}
+mapPages : (Int -> RemoteData err (EveryDictList key value) -> RemoteData err (EveryDictList key value)) -> PaginatedData err key value -> PaginatedData err key value
+mapPages func (PaginatedData data) =
+    PaginatedData
+        { data | pager = Dict.map func data.pager }
+
+
+{-| A convenience to map over our local values.
+-}
+mapLocal : (EveryDictList key value -> EveryDictList key value) -> PaginatedData err key value -> PaginatedData err key value
+mapLocal func (PaginatedData data) =
+    PaginatedData
+        { data | local = func data.local }
+
+
+{-| Update a single value.
+
+If they key is not found, the `PaginatedData` is returned unchanged.
+
+We assume that keys are unique. If there is more than one item with the same
+key, we will update each of them.
+
 -}
 update : key -> (value -> value) -> PaginatedData err key value -> PaginatedData err key value
-update key func ((PaginatedData dataAndPager) as wrapper) =
-    case EveryDictList.get key dataAndPager.data of
-        Nothing ->
-            wrapper
-
-        Just value ->
-            PaginatedData
-                { dataAndPager | data = EveryDictList.insert key (func value) dataAndPager.data }
+update key func data =
+    data
+        |> mapPages (always (RemoteData.map (EveryDictList.update key (Maybe.map func))))
+        |> mapLocal (EveryDictList.update key (Maybe.map func))
 
 
 {-| Remove a value from the data.
 
-Using `remove` is not advised, as it can create a situtation where the item
-indicated as first or last in the `pager`, is missing from the `data`.
-However, it can be used in situations where all the items are shown,
-without a pager, so removing will not have an effect on the pager.
+We assume that keys are unique. If there is more than one item wiht the same
+key, we will remove them all.
 
 -}
 remove : key -> PaginatedData err key value -> PaginatedData err key value
-remove key (PaginatedData dataAndPager) =
-    PaginatedData
-        { dataAndPager | data = EveryDictList.remove key dataAndPager.data }
+remove key data =
+    data
+        |> mapPages (always (RemoteData.map (EveryDictList.remove key)))
+        |> mapLocal (EveryDictList.remove key)
 
 
 {-| Get the pager info for the specified page (which is 1-based ... that is,
@@ -315,22 +376,29 @@ the first page is page 1).
     the keys corresponding to the first and last items on the page.
 
 -}
-getPage : Int -> PaginatedData err key value -> RemoteData err ( key, key )
-getPage page (PaginatedData existingDataAndPager) =
-    existingDataAndPager.pager
-        |> Dict.get page
+getPage : Int -> PaginatedData err key value -> RemoteData err (EveryDictList key value)
+getPage page (PaginatedData { pager }) =
+    Dict.get page pager
         |> Maybe.withDefault NotAsked
 
 
+{-| Get values which are not on any page.
+-}
+getLocal : PaginatedData err key value -> EveryDictList key value
+getLocal (PaginatedData { local }) =
+    local
+
+
 {-| Get the total count of all the values on all the pages. This includes
-values on pages which we have not fetched yet.
+values on pages which we have not fetched yet. However, it does not include
+any "local" items (items not on any page).
 
 If we don't know what the total count is yet, this will be `Nothing`.
 
 -}
 getTotalCount : PaginatedData err key value -> Maybe Int
-getTotalCount (PaginatedData existingDataAndPager) =
-    existingDataAndPager.totalCount
+getTotalCount (PaginatedData { totalCount }) =
+    totalCount
 
 
 {-| Set the total count, in case you need to set it manually.
@@ -346,23 +414,21 @@ where the total count is zero. So, if `totalCount` remains a `Nothing`, we would
 know that no data was fetched. But if it was `Just 0`, we would know that we have
 fetching the data successfully, but it resulted with no items.
 
+Note that this should include only those items that are on pages, not
+"local" items which are not on any page.
+
 -}
 setTotalCount : Maybe Int -> PaginatedData err key value -> PaginatedData err key value
-setTotalCount totalCount (PaginatedData existingDataAndPager) =
+setTotalCount totalCount (PaginatedData data) =
     PaginatedData
-        { existingDataAndPager | totalCount = totalCount }
+        { data | totalCount = totalCount }
 
 
 {-| Mark that a request for the specified page (1-based) is currently in progress.
 -}
 setPageAsLoading : Int -> PaginatedData err key value -> PaginatedData err key value
-setPageAsLoading pageNumber (PaginatedData existingDataAndPager) =
-    let
-        pagerUpdated =
-            Dict.insert pageNumber Loading existingDataAndPager.pager
-    in
-    PaginatedData
-        { existingDataAndPager | pager = pagerUpdated }
+setPageAsLoading pageNumber =
+    insertMultiple pageNumber Loading
 
 
 {-| When you receive a response from the backend to your request for a page of
@@ -390,199 +456,73 @@ insertMultiple :
     -> RemoteData err ( EveryDictList key value, Int )
     -> PaginatedData err key value
     -> PaginatedData err key value
-insertMultiple pageNumber webdata ((PaginatedData existingDataAndPager) as wrapper) =
+insertMultiple pageNumber webdata (PaginatedData existing) =
+    let
+        pagerWithResponse =
+            Dict.insert pageNumber (RemoteData.map Tuple.first webdata) existing.pager
+    in
     case webdata of
         Success ( items, totalCount ) ->
             let
-                maybePreviousItemLastUuid =
-                    if pageNumber > 1 then
-                        List.foldl
-                            (\index accum ->
-                                let
-                                    pagerInfo =
-                                        Dict.get (pageNumber - 1) existingDataAndPager.pager
-                                            |> Maybe.andThen RemoteData.toMaybe
-                                in
-                                case accum of
-                                    Just val ->
-                                        accum
+                -- This should be accurate unless we only have the last page.
+                -- If we have only one page, it's not in general possible to
+                -- figure out whether it's the last page, unless we already
+                -- know the page size (which is what we're trying to figure out
+                -- here).
+                pageSize =
+                    firstPageWithItems pagerWithResponse
+                        |> Maybe.map (Tuple.second >> EveryDictList.size)
 
-                                    Nothing ->
-                                        case pagerInfo of
-                                            Nothing ->
-                                                accum
+                lastPageNumber =
+                    -- For example if we have 120 items, and we got 25 items
+                    -- back it means there will be 5 pages.
+                    Maybe.map (\size -> ceiling (toFloat totalCount / toFloat size)) pageSize
 
-                                            Just pagerInfo ->
-                                                Just <| Tuple.second pagerInfo
-                            )
-                            Nothing
-                            (List.reverse <| List.range 1 (pageNumber - 1))
-
-                    else
-                        -- This is the first page, so there's nothing before it.
-                        Nothing
-
-                itemsUpdated =
-                    case maybePreviousItemLastUuid of
+                pagerWithAdjustedPageCount =
+                    case lastPageNumber of
                         Nothing ->
-                            if totalCount == 0 then
-                                -- No items with placed bid.
-                                EveryDictList.empty
+                            pagerWithResponse
 
-                            else
-                                -- This is the first page, we can enter by order.
-                                EveryDictList.foldl
-                                    EveryDictList.insert
-                                    existingDataAndPager.data
-                                    items
-
-                        Just previousItemLastUuid ->
-                            -- This page is after the previous one. As we know the last
-                            -- item from the previous page, we'll have to reverse to new items
-                            -- so they will end up correctly.
-                            -- That is, if we had these existing items key [1, 2, 3]
-                            -- we know that 3 is the last item. So, if we have the new items
-                            -- [4, 5, 6] we will reverse them and enter one by one
-                            -- [1, 2, 3, 6]. This looks wrong, but since we keep pushing after 3
-                            -- the next item will result with [1, 2, 3, 5, 6] and the process
-                            -- will end as expected with [1, 2, 3, 4, 5, 6].
-                            EveryDictList.foldl
-                                (EveryDictList.insertAfter previousItemLastUuid)
-                                existingDataAndPager.data
-                                (EveryDictList.reverse items)
-
-                totalItems =
-                    EveryDictList.size items
-
-                totalPages =
-                    -- For example if we have 120 items, and we got 25 items back
-                    -- it means there will be 5 pages.
-                    (toFloat totalCount / toFloat totalItems)
-                        |> ceiling
-
-                -- Get the first and last item, which might be the same one, in case
-                -- we have a single item.
-                firstAndLastItem =
-                    Maybe.map2 (,)
-                        (items
-                            |> EveryDictList.getAt 0
-                            |> Maybe.map Tuple.first
-                        )
-                        (items
-                            -- If we have 25 items, the last one will be in index 24.
-                            |> EveryDictList.getAt (totalItems - 1)
-                            |> Maybe.map Tuple.first
-                        )
-
-                pagerUpdated =
-                    case firstAndLastItem of
-                        Nothing ->
-                            -- If there are no items on this page, then just delete the
-                            -- page in the pager ... clearly it does not really exist.
-                            Dict.remove pageNumber existingDataAndPager.pager
-
-                        Just ( firstItem, lastItem ) ->
-                            if totalCount == 0 then
-                                -- Update the pager, so we won't continue fetching.
-                                Dict.insert pageNumber (Success ( firstItem, lastItem )) existingDataAndPager.pager
-
-                            else if Dict.size existingDataAndPager.pager <= 1 then
-                                -- If the pager dict was not built yet, or we just have the
-                                -- first page `Loading` - before we knew how many items we'll
-                                -- have in total.
-                                List.range 1 totalPages
-                                    |> List.foldl
-                                        (\index accum ->
-                                            let
-                                                value =
-                                                    if index == pageNumber then
-                                                        Success ( firstItem, lastItem )
-
-                                                    else
-                                                        NotAsked
-                                            in
-                                            Dict.insert index value accum
+                        Just lastPage ->
+                            let
+                                pagerWithoutNonexistentPages =
+                                    Dict.filter
+                                        (\page data ->
+                                            -- We'll keep pages if they are
+                                            -- within our total pages, or if
+                                            -- they have data.
+                                            page <= lastPage || RemoteData.isSuccess data
                                         )
-                                        Dict.empty
+                                        pagerWithResponse
 
-                            else
-                                -- Update the existing pager dict.
-                                Dict.insert pageNumber (Success ( firstItem, lastItem )) existingDataAndPager.pager
+                                allNotAsked =
+                                    List.range 1 lastPage
+                                        |> List.map (\page -> ( page, NotAsked ))
+                                        |> Dict.fromList
+                            in
+                            -- `union` prefers the first argument. So,
+                            -- basically, we're providing `NotAsked` as the
+                            -- defaults where we don't have an entry for a
+                            -- page yet.
+                            Dict.union pagerWithoutNonexistentPages allNotAsked
             in
             PaginatedData
-                { existingDataAndPager
-                    | data = itemsUpdated
-                    , pager = pagerUpdated
+                { existing
+                    | pager = pagerWithAdjustedPageCount
                     , totalCount = Just totalCount
                 }
 
-        Failure error ->
-            let
-                pager =
-                    Dict.insert pageNumber (Failure error) existingDataAndPager.pager
-            in
+        _ ->
+            -- In the other cases, we just remember the result of the request.
             PaginatedData
-                { existingDataAndPager | pager = pager }
-
-        Loading ->
-            wrapper
-
-        NotAsked ->
-            wrapper
+                { existing | pager = pagerWithResponse }
 
 
-{-| Insert a value obtained directly from the client.
-
-  - If the key already exists, we ignore the new value. (You could use `update`
-    to change an existing value if you like).
-
-  - If there are no pages, we make one, and put the new value there.
-
-  - Otherwise, we add the value to the last page.
-
+{-| Insert a value which is not on any page.
 -}
 insertDirectlyFromClient : key -> value -> PaginatedData err key value -> PaginatedData err key value
-insertDirectlyFromClient key value ((PaginatedData existingDataAndPager) as wrapper) =
-    case get key wrapper of
-        Just _ ->
-            -- Value is already in dict.
-            wrapper
-
-        Nothing ->
-            -- Very naively just add it to the end of the last page
-            let
-                ( page, pager ) =
-                    existingDataAndPager.pager
-                        |> Dict.toList
-                        |> List.sortBy (\( key, _ ) -> key)
-                        |> List.reverse
-                        |> List.head
-                        |> Maybe.withDefault ( 1, NotAsked )
-
-                pagerUpdated =
-                    case pager of
-                        NotAsked ->
-                            -- First and last key are now the only page.
-                            Success ( key, key )
-
-                        Success ( start, _ ) ->
-                            -- Last key is now the new key.
-                            Success ( start, key )
-
-                        _ ->
-                            -- Satisfy the compiler.
-                            pager
-
-                totalCount =
-                    existingDataAndPager.totalCount
-                        |> Maybe.withDefault 0
-            in
-            PaginatedData
-                { existingDataAndPager
-                    | data = EveryDictList.insert key value existingDataAndPager.data
-                    , pager = Dict.insert page pagerUpdated existingDataAndPager.pager
-                    , totalCount = Just <| totalCount + 1
-                }
+insertDirectlyFromClient key value =
+    mapLocal (EveryDictList.insert key value)
 
 
 {-| Generate some HTML with links to each page.
@@ -636,46 +576,12 @@ viewPager func currentPage (PaginatedData { pager }) =
 
 
 {-| Get all the items which are on the specified page (1-based).
+
+This will return an empty `EveryDictList` for pages which don't exist, are
+loading, or had errors. For more specific information about those cases, use
+`getPage` instead.
+
 -}
 getItemsByPager : Int -> PaginatedData e k v -> EveryDictList k v
-getItemsByPager currentPage (PaginatedData { data, pager }) =
-    if
-        Dict.size pager <= 1
-        -- We have only a single page.
-    then
-        data
-
-    else
-        let
-            pagerInfo =
-                Dict.get currentPage pager
-                    |> Maybe.withDefault NotAsked
-        in
-        case pagerInfo of
-            Success ( firstItem, lastItem ) ->
-                let
-                    firstIndex =
-                        EveryDictList.indexOfKey firstItem data
-                            |> Maybe.withDefault 0
-
-                    lastIndex =
-                        EveryDictList.indexOfKey lastItem data
-                            |> Maybe.withDefault 0
-                in
-                -- Rebuild the subset of items.
-                List.foldl
-                    (\index accum ->
-                        case EveryDictList.getAt index data of
-                            Just ( k, v ) ->
-                                EveryDictList.insert k v accum
-
-                            Nothing ->
-                                -- Satisfy the compiler.
-                                accum
-                    )
-                    EveryDictList.empty
-                    (List.range firstIndex lastIndex)
-
-            _ ->
-                -- We have no pager info yet, so we don't know which items to return.
-                EveryDictList.empty
+getItemsByPager currentPage =
+    getPage currentPage >> RemoteData.withDefault EveryDictList.empty

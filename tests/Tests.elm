@@ -14,7 +14,7 @@ module Tests exposing
     , testUpdate
     )
 
-import EveryDictList
+import EveryDictList exposing (EveryDictList)
 import Expect
 import Fuzz exposing (..)
 import Http
@@ -53,13 +53,13 @@ testFetchPaginated =
         , test "If we have the current page, and we have no entries for other pages, we should not fetch the next page" <|
             \_ ->
                 emptyPaginatedData
-                    |> insertDirectlyFromClient "key" "value"
+                    |> insertMultiple 1 (Success ( keysAndValues, 5 ))
                     |> fetchPaginated 1
                     |> Expect.equal []
         , test "If we directly request a page we don't expect to exist, we should get it even if we have other pages" <|
             \_ ->
                 emptyPaginatedData
-                    |> insertDirectlyFromClient "key" "value"
+                    |> insertMultiple 1 (Success ( keysAndValues, 5 ))
                     |> fetchPaginated 2
                     |> Expect.equal [ 2 ]
         ]
@@ -76,7 +76,7 @@ testFetchAll =
         , test "If we have one page, and that's all there is, we should do nothing" <|
             \_ ->
                 emptyPaginatedData
-                    |> insertDirectlyFromClient "key" "value"
+                    |> insertMultiple 1 (Success ( keysAndValues, 5 ))
                     |> fetchAll
                     |> Expect.equal []
         ]
@@ -181,10 +181,20 @@ testGetPage =
         , test "Getting an existing page should work" <|
             \_ ->
                 emptyPaginatedData
-                    |> insertDirectlyFromClient "key" "value"
-                    |> insertDirectlyFromClient "key2" "value2"
+                    |> insertMultiple 1 Loading
                     |> getPage 1
-                    |> Expect.equal (Success ( "key", "key2" ))
+                    |> Expect.equal Loading
+        ]
+
+
+keysAndValues : EveryDictList String String
+keysAndValues =
+    EveryDictList.fromList
+        [ ( "key1", "value1" )
+        , ( "key2", "value2" )
+        , ( "key3", "value3" )
+        , ( "key4", "value4" )
+        , ( "key5", "value5" )
         ]
 
 
@@ -198,10 +208,9 @@ testGetTotalCount =
         , test "Total count of a pager with a few values should work" <|
             \_ ->
                 emptyPaginatedData
-                    |> insertDirectlyFromClient "key" "value"
-                    |> insertDirectlyFromClient "key2" "value2"
+                    |> insertMultiple 1 (Success ( keysAndValues, 10 ))
                     |> getTotalCount
-                    |> Expect.equal (Just 2)
+                    |> Expect.equal (Just 10)
         ]
 
 
@@ -228,13 +237,7 @@ testSetPageAsLoading =
 testInsertMultiple : Test
 testInsertMultiple =
     describe "insertMultiple"
-        [ test "Indicating that a page is Loading should leave the pager unchanged" <|
-            \_ ->
-                emptyPaginatedData
-                    |> insertMultiple 1 Loading
-                    |> getPage 1
-                    |> Expect.equal NotAsked
-        , test "Indicating that a page has Failed should work" <|
+        [ test "Indicating that a page has Failed should work" <|
             \_ ->
                 emptyPaginatedData
                     |> insertMultiple 1 (Failure Http.Timeout)
@@ -257,39 +260,10 @@ testInsertDirectlyFromClient =
                                 |> Expect.equal
                                     [ ( "key", "value" ) ]
                         , \pager ->
-                            getTotalCount pager
-                                |> Expect.equal (Just 1)
-                        , \pager ->
-                            getPage 1 pager
-                                |> Expect.equal (Success ( "key", "key" ))
-                        ]
-        , test "If we have 1 page, should insert on that page" <|
-            \_ ->
-                emptyPaginatedData
-                    |> insertDirectlyFromClient "key" "value"
-                    |> insertDirectlyFromClient "key2" "value2"
-                    |> Expect.all
-                        [ \pager ->
-                            getAll pager
+                            getLocal pager
                                 |> EveryDictList.toList
-                                |> Expect.equal
-                                    [ ( "key", "value" )
-                                    , ( "key2", "value2" )
-                                    ]
-                        , \pager ->
-                            getTotalCount pager
-                                |> Expect.equal (Just 2)
-                        , \pager ->
-                            getPage 1 pager
-                                |> Expect.equal (Success ( "key", "key2" ))
+                                |> Expect.equal [ ( "key", "value" ) ]
                         ]
-        , test "Ignore the new value if we already have the key" <|
-            \_ ->
-                emptyPaginatedData
-                    |> insertDirectlyFromClient "key" "old value"
-                    |> insertDirectlyFromClient "key" "new value"
-                    |> get "key"
-                    |> Expect.equal (Just "old value")
         ]
 
 
@@ -305,23 +279,8 @@ testGetItemsByPager =
         , test "Single page" <|
             \_ ->
                 emptyPaginatedData
-                    |> insertDirectlyFromClient "key" "value"
-                    |> insertDirectlyFromClient "key2" "value2"
+                    |> insertMultiple 1 (Success ( keysAndValues, 10 ))
                     |> getItemsByPager 1
                     |> EveryDictList.toList
-                    |> Expect.equal
-                        [ ( "key", "value" )
-                        , ( "key2", "value2" )
-                        ]
-        , fuzz fuzzPage "If we only have one page, requesting any page should get page 1" <|
-            \page ->
-                emptyPaginatedData
-                    |> insertDirectlyFromClient "key" "value"
-                    |> insertDirectlyFromClient "key2" "value2"
-                    |> getItemsByPager page
-                    |> EveryDictList.toList
-                    |> Expect.equal
-                        [ ( "key", "value" )
-                        , ( "key2", "value2" )
-                        ]
+                    |> Expect.equal (EveryDictList.toList keysAndValues)
         ]
