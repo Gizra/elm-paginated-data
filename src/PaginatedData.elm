@@ -174,56 +174,60 @@ current page and possibly the next page, take a look at `fetchAllPages` instead.
 -}
 fetchNextPage : Int -> PaginatedData e k v -> List Int
 fetchNextPage currentPage (PaginatedData { pager }) =
-    let
-        currentPageData =
-            Dict.get currentPage pager
-                |> Maybe.withDefault NotAsked
-    in
-    case currentPageData of
-        NotAsked ->
-            -- If we haven't asked for the current page yet, we should do so.
-            [ currentPage ]
+    if currentPage < 1 then
+        []
 
-        Loading ->
-            -- If the current page is loading, we wait for an answer.
-            []
+    else
+        let
+            currentPageData =
+                Dict.get currentPage pager
+                    |> Maybe.withDefault NotAsked
+        in
+        case currentPageData of
+            NotAsked ->
+                -- If we haven't asked for the current page yet, we should do so.
+                [ currentPage ]
 
-        Failure _ ->
-            -- We don't automatically re-try failures ... and, if we got a
-            -- failure, we don't try to pre-fetch the next page.
-            []
+            Loading ->
+                -- If the current page is loading, we wait for an answer.
+                []
 
-        Success _ ->
-            -- If we have data for the current page, we check whether to fetch
-            -- the next page.
-            let
-                nextPage =
-                    currentPage + 1
-            in
-            case Dict.get nextPage pager of
-                Just NotAsked ->
-                    -- If we expect a page to exist here, and it is a `NotAsked`,
-                    -- then we ask for it.
-                    [ nextPage ]
+            Failure _ ->
+                -- We don't automatically re-try failures ... and, if we got a
+                -- failure, we don't try to pre-fetch the next page.
+                []
 
-                Just _ ->
-                    -- If we expect a page to exist here, and it's something other
-                    -- than `NotAsked`, we don't do anything.
-                    []
+            Success _ ->
+                -- If we have data for the current page, we check whether to fetch
+                -- the next page.
+                let
+                    nextPage =
+                        currentPage + 1
+                in
+                case Dict.get nextPage pager of
+                    Just NotAsked ->
+                        -- If we expect a page to exist here, and it is a `NotAsked`,
+                        -- then we ask for it.
+                        [ nextPage ]
 
-                Nothing ->
-                    -- If we don't expect a page to exist here, and this is not
-                    -- the first page, then consider getting page 1.
-                    if currentPage == 1 then
+                    Just _ ->
+                        -- If we expect a page to exist here, and it's something other
+                        -- than `NotAsked`, we don't do anything.
                         []
 
-                    else
-                        case Dict.get 1 pager of
-                            Just NotAsked ->
-                                [ 1 ]
+                    Nothing ->
+                        -- If we don't expect a page to exist here, and this is not
+                        -- the first page, then consider getting page 1.
+                        if currentPage == 1 then
+                            []
 
-                            _ ->
-                                []
+                        else
+                            case Dict.get 1 pager of
+                                Just NotAsked ->
+                                    [ 1 ]
+
+                                _ ->
+                                    []
 
 
 {-| Suppose you'd like to fetch all the pages, but just one at a time. You'll
