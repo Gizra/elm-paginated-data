@@ -169,10 +169,10 @@ current page and possibly the next page, take a look at `fetchAll` instead.
 
 -}
 fetchPaginated : Int -> PaginatedData e k v -> List Int
-fetchPaginated currentPage (PaginatedData existingDataAndPager) =
+fetchPaginated currentPage (PaginatedData { pager }) =
     let
         currentPageData =
-            Dict.get currentPage existingDataAndPager.pager
+            Dict.get currentPage pager
                 |> Maybe.withDefault NotAsked
     in
     case currentPageData of
@@ -196,7 +196,7 @@ fetchPaginated currentPage (PaginatedData existingDataAndPager) =
                 nextPage =
                     currentPage + 1
             in
-            case Dict.get nextPage existingDataAndPager.pager of
+            case Dict.get nextPage pager of
                 Just NotAsked ->
                     -- If we expect a page to exist here, and it is a `NotAsked`,
                     -- then we ask for it.
@@ -214,7 +214,7 @@ fetchPaginated currentPage (PaginatedData existingDataAndPager) =
                         []
 
                     else
-                        case Dict.get 1 existingDataandPager.pager of
+                        case Dict.get 1 pager of
                             Just NotAsked ->
                                 [ 1 ]
 
@@ -244,17 +244,17 @@ If you don't want to fetch all the pages at once, take a look at
 
 -}
 fetchAll : PaginatedData e k v -> List Int
-fetchAll ((PaginatedData existingDataAndPager) as wrapper) =
+fetchAll ((PaginatedData { pager }) as data) =
     let
         -- Current page is actually the last page that had a successful
         -- response.
         currentPage =
-            existingDataAndPager.pager
+            pager
                 |> lastPageWithItems
                 |> Maybe.map Tuple.first
                 |> Maybe.withDefault 1
     in
-    fetchPaginated currentPage wrapper
+    fetchPaginated currentPage data
 
 
 
