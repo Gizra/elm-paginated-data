@@ -1,8 +1,8 @@
 module PaginatedData exposing
     ( PaginatedData, PaginatedWebData, emptyPaginatedData
-    , get, getAll, getItemsByPager, getTotalCount, getPage, getLocal
-    , fetchAll, fetchPaginated
-    , insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, setTotalCount, update
+    , get, getAll, getItemsByPage, getTotalCount, getPage, getLocal
+    , fetchAllPages, fetchNextPage
+    , insertLocal, handleFetchedPage, remove, setPageAsLoading, setTotalCount, update
     , viewPager
     )
 
@@ -22,17 +22,17 @@ requests are in flight?
 
 ### Accessors
 
-@docs get, getAll, getItemsByPager, getTotalCount, getPage, getLocal
+@docs get, getAll, getItemsByPage, getTotalCount, getPage, getLocal
 
 
 ### Fetch helpers
 
-@docs fetchAll, fetchPaginated
+@docs fetchAllPages, fetchNextPage
 
 
 ### Updaters
 
-@docs insertDirectlyFromClient, insertMultiple, remove, setPageAsLoading, setTotalCount, update
+@docs insertLocal, handleFetchedPage, remove, setPageAsLoading, setTotalCount, update
 
 
 ### View
@@ -67,7 +67,7 @@ is a convenient alias for that common case.
 type PaginatedData err key value
     = PaginatedData
         -- A record representing an attempt to fetch each page. In
-        -- `insertMultiple`, we look at the `totalCount` and try to infer the
+        -- `handleFetchedPage`, we look at the `totalCount` and try to infer the
         -- page size, so we will actually have a `NotAsked` entry here for
         -- every page we expect to exist.
         { pager : Pager err key value
@@ -169,11 +169,11 @@ This function is a nice helper for the
 function, but is useful in other contexts as well.
 
 If you'd like to fetch all the pages (one at a time), rather than just the
-current page and possibly the next page, take a look at `fetchAll` instead.
+current page and possibly the next page, take a look at `fetchAllPages` instead.
 
 -}
-fetchPaginated : Int -> PaginatedData e k v -> List Int
-fetchPaginated currentPage (PaginatedData { pager }) =
+fetchNextPage : Int -> PaginatedData e k v -> List Int
+fetchNextPage currentPage (PaginatedData { pager }) =
     let
         currentPageData =
             Dict.get currentPage pager
@@ -244,11 +244,11 @@ next page, and so on. That's what this function helps with.
     the next time you call this. It will be time to fetch the next page!
 
 If you don't want to fetch all the pages at once, take a look at
-`fetchPaginatedData` instead.
+`fetchNextPage` instead.
 
 -}
-fetchAll : PaginatedData e k v -> List Int
-fetchAll ((PaginatedData { pager }) as data) =
+fetchAllPages : PaginatedData e k v -> List Int
+fetchAllPages ((PaginatedData { pager }) as data) =
     let
         -- Current page is actually the last page that had a successful
         -- response.
@@ -258,7 +258,7 @@ fetchAll ((PaginatedData { pager }) as data) =
                 |> Maybe.map Tuple.first
                 |> Maybe.withDefault 1
     in
-    fetchPaginated currentPage data
+    fetchNextPage currentPage data
 
 
 
@@ -432,7 +432,7 @@ setTotalCount totalCount (PaginatedData data) =
 -}
 setPageAsLoading : Int -> PaginatedData err key value -> PaginatedData err key value
 setPageAsLoading pageNumber =
-    insertMultiple pageNumber Loading
+    handleFetchedPage pageNumber Loading
 
 
 {-| When you receive a response from the backend to your request for a page of
@@ -455,12 +455,12 @@ data, use this function to update the `PaginatedData` with the response.
     status.)
 
 -}
-insertMultiple :
+handleFetchedPage :
     Int
     -> RemoteData err ( EveryDictList key value, Int )
     -> PaginatedData err key value
     -> PaginatedData err key value
-insertMultiple pageNumber webdata (PaginatedData existing) =
+handleFetchedPage pageNumber webdata (PaginatedData existing) =
     let
         pagerWithResponse =
             Dict.insert pageNumber (RemoteData.map Tuple.first webdata) existing.pager
@@ -536,8 +536,8 @@ insertMultiple pageNumber webdata (PaginatedData existing) =
 
 {-| Insert a value which is not on any page.
 -}
-insertDirectlyFromClient : key -> value -> PaginatedData err key value -> PaginatedData err key value
-insertDirectlyFromClient key value =
+insertLocal : key -> value -> PaginatedData err key value -> PaginatedData err key value
+insertLocal key value =
     mapLocal (EveryDictList.insert key value)
 
 
@@ -593,6 +593,6 @@ loading, or had errors. For more specific information about those cases, use
 `getPage` instead.
 
 -}
-getItemsByPager : Int -> PaginatedData e k v -> EveryDictList k v
-getItemsByPager currentPage =
+getItemsByPage : Int -> PaginatedData e k v -> EveryDictList k v
+getItemsByPage currentPage =
     getPage currentPage >> RemoteData.withDefault EveryDictList.empty

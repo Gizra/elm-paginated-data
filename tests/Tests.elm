@@ -1,13 +1,13 @@
 module Tests exposing
-    ( testFetchAll
-    , testFetchPaginated
+    ( testFetchAllPages
+    , testFetchNextPage
     , testGet
     , testGetAll
-    , testGetItemsByPager
+    , testGetItemsByPage
     , testGetPage
     , testGetTotalCount
-    , testInsertDirectlyFromClient
-    , testInsertMultiple
+    , testHandleFetchedPage
+    , testInsertLocal
     , testRemove
     , testSetPageAsLoading
     , testSetTotalCount
@@ -37,47 +37,47 @@ fuzzCount =
     Fuzz.intRange 0 1000
 
 
-testFetchPaginated : Test
-testFetchPaginated =
-    describe "fetchPaginated"
+testFetchNextPage : Test
+testFetchNextPage =
+    describe "fetchNextPage"
         [ fuzz fuzzPage "If empty, should fetch whatever page we ask for" <|
             \current ->
-                fetchPaginated current emptyPaginatedData
+                fetchNextPage current emptyPaginatedData
                     |> Expect.equal [ current ]
         , test "If we're loading the current page, should do nothing" <|
             \_ ->
                 emptyPaginatedData
                     |> setPageAsLoading 1
-                    |> fetchPaginated 1
+                    |> fetchNextPage 1
                     |> Expect.equal []
         , test "If we have the current page, and we have no entries for other pages, we should not fetch the next page" <|
             \_ ->
                 emptyPaginatedData
-                    |> insertMultiple 1 (Success ( keysAndValues, 5 ))
-                    |> fetchPaginated 1
+                    |> handleFetchedPage 1 (Success ( keysAndValues, 5 ))
+                    |> fetchNextPage 1
                     |> Expect.equal []
         , test "If we directly request a page we don't expect to exist, we should get it even if we have other pages" <|
             \_ ->
                 emptyPaginatedData
-                    |> insertMultiple 1 (Success ( keysAndValues, 5 ))
-                    |> fetchPaginated 2
+                    |> handleFetchedPage 1 (Success ( keysAndValues, 5 ))
+                    |> fetchNextPage 2
                     |> Expect.equal [ 2 ]
         ]
 
 
-testFetchAll : Test
-testFetchAll =
+testFetchAllPages : Test
+testFetchAllPages =
     describe "fetchAll"
         [ test "With an empty pager, we should fetch the first page" <|
             \_ ->
                 emptyPaginatedData
-                    |> fetchAll
+                    |> fetchAllPages
                     |> Expect.equal [ 1 ]
         , test "If we have one page, and that's all there is, we should do nothing" <|
             \_ ->
                 emptyPaginatedData
-                    |> insertMultiple 1 (Success ( keysAndValues, 5 ))
-                    |> fetchAll
+                    |> handleFetchedPage 1 (Success ( keysAndValues, 5 ))
+                    |> fetchAllPages
                     |> Expect.equal []
         ]
 
@@ -93,7 +93,7 @@ testGet =
         , fuzz2 Fuzz.int Fuzz.string "Getting something you just put into a pager should return it" <|
             \key value ->
                 emptyPaginatedData
-                    |> insertDirectlyFromClient key value
+                    |> insertLocal key value
                     |> get key
                     |> Expect.equal (Just value)
         ]
@@ -111,8 +111,8 @@ testGetAll =
         , test "If we insert something, we should get it" <|
             \_ ->
                 emptyPaginatedData
-                    |> insertDirectlyFromClient "key" "value"
-                    |> insertDirectlyFromClient "key2" "value2"
+                    |> insertLocal "key" "value"
+                    |> insertLocal "key2" "value2"
                     |> getAll
                     |> EveryDictList.toList
                     |> Expect.equal
@@ -135,8 +135,8 @@ testUpdate =
         , test "Updating an existing value should work" <|
             \_ ->
                 emptyPaginatedData
-                    |> insertDirectlyFromClient "key" 17
-                    |> insertDirectlyFromClient "key2" 21
+                    |> insertLocal "key" 17
+                    |> insertLocal "key2" 21
                     |> update "key" ((+) 1)
                     |> getAll
                     |> EveryDictList.toList
@@ -160,8 +160,8 @@ testRemove =
         , test "Removing an existing value should work" <|
             \_ ->
                 emptyPaginatedData
-                    |> insertDirectlyFromClient "key" 17
-                    |> insertDirectlyFromClient "key2" 21
+                    |> insertLocal "key" 17
+                    |> insertLocal "key2" 21
                     |> remove "key"
                     |> getAll
                     |> EveryDictList.toList
@@ -181,7 +181,7 @@ testGetPage =
         , test "Getting an existing page should work" <|
             \_ ->
                 emptyPaginatedData
-                    |> insertMultiple 1 Loading
+                    |> handleFetchedPage 1 Loading
                     |> getPage 1
                     |> Expect.equal Loading
         ]
@@ -208,7 +208,7 @@ testGetTotalCount =
         , test "Total count of a pager with a few values should work" <|
             \_ ->
                 emptyPaginatedData
-                    |> insertMultiple 1 (Success ( keysAndValues, 10 ))
+                    |> handleFetchedPage 1 (Success ( keysAndValues, 10 ))
                     |> getTotalCount
                     |> Expect.equal (Just 10)
         ]
@@ -234,25 +234,25 @@ testSetPageAsLoading =
                 |> Expect.equal Loading
 
 
-testInsertMultiple : Test
-testInsertMultiple =
-    describe "insertMultiple"
+testHandleFetchedPage : Test
+testHandleFetchedPage =
+    describe "handleFetchedPage"
         [ test "Indicating that a page has Failed should work" <|
             \_ ->
                 emptyPaginatedData
-                    |> insertMultiple 1 (Failure Http.Timeout)
+                    |> handleFetchedPage 1 (Failure Http.Timeout)
                     |> getPage 1
                     |> Expect.equal (Failure Http.Timeout)
         ]
 
 
-testInsertDirectlyFromClient : Test
-testInsertDirectlyFromClient =
-    describe "insertDirectlyFromClient"
+testInsertLocal : Test
+testInsertLocal =
+    describe "insertLocal"
         [ test "Inserting into empty pager should work" <|
             \_ ->
                 emptyPaginatedData
-                    |> insertDirectlyFromClient "key" "value"
+                    |> insertLocal "key" "value"
                     |> Expect.all
                         [ \pager ->
                             getAll pager
@@ -267,20 +267,20 @@ testInsertDirectlyFromClient =
         ]
 
 
-testGetItemsByPager : Test
-testGetItemsByPager =
-    describe "getItemsByPager"
+testGetItemsByPage : Test
+testGetItemsByPage =
+    describe "getItemsByPage"
         [ test "An empty pager has no items" <|
             \_ ->
                 emptyPaginatedData
-                    |> getItemsByPager 1
+                    |> getItemsByPage 1
                     |> EveryDictList.size
                     |> Expect.equal 0
         , test "Single page" <|
             \_ ->
                 emptyPaginatedData
-                    |> insertMultiple 1 (Success ( keysAndValues, 10 ))
-                    |> getItemsByPager 1
+                    |> handleFetchedPage 1 (Success ( keysAndValues, 10 ))
+                    |> getItemsByPage 1
                     |> EveryDictList.toList
                     |> Expect.equal (EveryDictList.toList keysAndValues)
         ]
