@@ -558,33 +558,28 @@ there are three pages and the current page is page 2).
 If we haven't attempted to fetch any pages yet, you'll get back an empty text
 node.
 
+Note that this does not take into account any "local" values.
+
 -}
 viewPager : (Int -> msg) -> Int -> PaginatedData e k v -> Html msg
 viewPager func currentPage (PaginatedData { pager }) =
-    if Dict.size pager <= 1 then
-        text ""
+    pager
+        |> Dict.keys
+        |> List.map
+            (\pageNumber ->
+                let
+                    aAttr =
+                        if pageNumber == currentPage then
+                            [ action "javascript:void(0);" ]
 
-    else
-        -- @todo :Allow adding own attributes to ul/ li
-        ul [ class "pagination" ]
-            (pager
-                |> Dict.keys
-                |> List.sort
-                |> List.map
-                    (\pageNumber ->
-                        let
-                            aAttr =
-                                if pageNumber == currentPage then
-                                    [ action "javascript:void(0);" ]
-
-                                else
-                                    [ onClick <| func pageNumber ]
-                        in
-                        li [ classList [ ( "active", pageNumber == currentPage ) ] ]
-                            [ a aAttr [ text <| toString pageNumber ]
-                            ]
-                    )
+                        else
+                            [ onClick <| func pageNumber ]
+                in
+                li [ classList [ ( "active", pageNumber == currentPage ) ] ]
+                    [ a aAttr [ text <| toString pageNumber ]
+                    ]
             )
+        |> ul [ class "pagination" ]
 
 
 {-| Get all the items which are on the specified page (1-based).
