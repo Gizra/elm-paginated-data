@@ -85,25 +85,6 @@ type alias Pager err key value =
     Dict Int (RemoteData err (EveryDictList key value))
 
 
-{-| An internal function to give us the first page which was successfully
-fetched. We use this, for instance, to infer the page size. We can't infer it
-from the last page, since that might be a partial page.
--}
-firstPageWithItems : Pager err key value -> Maybe ( Int, EveryDictList key value )
-firstPageWithItems =
-    Dict.foldl
-        (\page remoteData accum ->
-            case accum of
-                Just _ ->
-                    accum
-
-                Nothing ->
-                    RemoteData.map (\data -> ( page, data )) remoteData
-                        |> RemoteData.toMaybe
-        )
-        Nothing
-
-
 {-| A convenient alias for the common case where your `PaginatedData`
 is fetched via `Http` requests, so your errors are `Http.Error`.
 -}
@@ -121,6 +102,37 @@ emptyPaginatedData =
         , totalCount = Nothing
         , local = EveryDictList.empty
         }
+
+
+{-| Keep the accumulator if it is a `Just`. Otherwise, use the provided `RemoteData`
+if it is a `Success`.
+-}
+accumulatorOrItems : Int -> RemoteData err (EveryDictList key value) -> Maybe ( Int, EveryDictList key value ) -> Maybe ( Int, EveryDictList key value )
+accumulatorOrItems page remoteData accum =
+    case accum of
+        Just _ ->
+            accum
+
+        Nothing ->
+            remoteData
+                |> RemoteData.map (\data -> ( page, data ))
+                |> RemoteData.toMaybe
+
+
+{-| An internal function to give us the first page which was successfully
+fetched. We use this, for instance, to infer the page size. We can't infer it
+from the last page, since that might be a partial page.
+-}
+firstPageWithItems : Pager err key value -> Maybe ( Int, EveryDictList key value )
+firstPageWithItems =
+    Dict.foldl accumulatorOrItems Nothing
+
+
+{-| Like firstPageWithItems, but the opposite.
+-}
+lastPageWithItems : Pager err key value -> Maybe ( Int, EveryDictList key value )
+lastPageWithItems =
+    Dict.foldr accumulatorOrItems Nothing
 
 
 {-| You supply the current page -- for instance, perhaps the page which the
@@ -159,15 +171,9 @@ current page and possibly the next page, take a look at `fetchAll` instead.
 fetchPaginated : Int -> PaginatedData e k v -> List Int
 fetchPaginated currentPage (PaginatedData existingDataAndPager) =
     let
-        nextPage =
-            currentPage + 1
-
         currentPageData =
             Dict.get currentPage existingDataAndPager.pager
                 |> Maybe.withDefault NotAsked
-
-        nextPageData =
-            Dict.get nextPage existingDataAndPager.pager
     in
     case currentPageData of
         NotAsked ->
@@ -179,23 +185,41 @@ fetchPaginated currentPage (PaginatedData existingDataAndPager) =
             []
 
         Failure _ ->
-            -- We don't automatically re-try failures ... and, if we got
-            -- a failure, we don't try to pre-fetch the next page.
+            -- We don't automatically re-try failures ... and, if we got a
+            -- failure, we don't try to pre-fetch the next page.
             []
 
         Success _ ->
-            -- If we successfully have data for the current page, we check
-            -- whether to fetch the next page.
-            case nextPageData of
+            -- If we have data for the current page, we check whether to fetch
+            -- the next page.
+            let
+                nextPage =
+                    currentPage + 1
+            in
+            case Dict.get nextPage existingDataAndPager.pager of
                 Just NotAsked ->
-                    -- We only try to fetch the next page if we actually have
-                    -- an entry in the pager for it, and it is a `NotAsked`.
+                    -- If we expect a page to exist here, and it is a `NotAsked`,
+                    -- then we ask for it.
                     [ nextPage ]
 
-                _ ->
-                    -- This covers the case where we don't have an entry for
-                    -- the next page, or it is something other than `NotAsked`.
+                Just _ ->
+                    -- If we expect a page to exist here, and it's something other
+                    -- than `NotAsked`, we don't do anything.
                     []
+
+                Nothing ->
+                    -- If we don't expect a page to exist here, and this is not
+                    -- the first page, then consider getting page 1.
+                    if currentPage == 1 then
+                        []
+
+                    else
+                        case Dict.get 1 existingDataandPager.pager of
+                            Just NotAsked ->
+                                [ 1 ]
+
+                            _ ->
+                                []
 
 
 {-| Suppose you'd like to fetch all the pages, but just one at a time. You'll
@@ -220,41 +244,17 @@ If you don't want to fetch all the pages at once, take a look at
 
 -}
 fetchAll : PaginatedData e k v -> List Int
-fetchAll (PaginatedData existingDataAndPager) =
+fetchAll ((PaginatedData existingDataAndPager) as wrapper) =
     let
         -- Current page is actually the last page that had a successful
         -- response.
         currentPage =
             existingDataAndPager.pager
-                |> Dict.toList
-                -- Keep only successs values.
-                |> List.filter (\( _, webData ) -> RemoteData.isSuccess webData)
-                -- Sort the list by page number, and get the highest value.
-                |> List.sortBy (\( pageNumber, _ ) -> pageNumber)
-                |> List.reverse
-                |> List.head
-                |> Maybe.andThen (\( pageNumber, _ ) -> Just pageNumber)
+                |> lastPageWithItems
+                |> Maybe.map Tuple.first
                 |> Maybe.withDefault 1
-
-        currentPageData =
-            Dict.get currentPage existingDataAndPager.pager
-                |> Maybe.withDefault NotAsked
-
-        hasNextPage =
-            Dict.member (currentPage + 1) existingDataAndPager.pager
-
-        nextPageData =
-            Dict.get (currentPage + 1) existingDataAndPager.pager
-                |> Maybe.withDefault NotAsked
     in
-    if RemoteData.isNotAsked currentPageData then
-        [ currentPage ]
-
-    else if hasNextPage && RemoteData.isNotAsked nextPageData then
-        [ currentPage + 1 ]
-
-    else
-        []
+    fetchPaginated currentPage wrapper
 
 
 
@@ -476,7 +476,19 @@ insertMultiple pageNumber webdata (PaginatedData existing) =
                 lastPageNumber =
                     -- For example if we have 120 items, and we got 25 items
                     -- back it means there will be 5 pages.
-                    Maybe.map (\size -> ceiling (toFloat totalCount / toFloat size)) pageSize
+                    Maybe.map
+                        (\size ->
+                            -- If we're asking for the first page and it has no
+                            -- items, then we do want to keep a record of
+                            -- having requested the one page. And, avoid
+                            -- dividing by zero!
+                            if size == 0 then
+                                1
+
+                            else
+                                ceiling (toFloat totalCount / toFloat size)
+                        )
+                        pageSize
 
                 pagerWithAdjustedPageCount =
                     case lastPageNumber of
