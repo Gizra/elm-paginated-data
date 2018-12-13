@@ -66,6 +66,10 @@ is a convenient alias for that common case.
 -}
 type PaginatedData err key value
     = PaginatedData
+        -- A record representing an attempt to fetch each page. In
+        -- `insertMultiple`, we look at the `totalCount` and try to infer the
+        -- page size, so we will actually have a `NotAsked` entry here for
+        -- every page we expect to exist.
         { pager : Pager err key value
 
         -- Represents the number of items which we would have once we receive
