@@ -25,22 +25,101 @@ import Test exposing (..)
 
 {-| Fuzz a realistic page number. Not negative, for instance.
 -}
-fuzzPage : Fuzzer Int
-fuzzPage =
-    Fuzz.intRange 1 100
+fuzzPageNumber : Fuzzer Int
+fuzzPageNumber =
+    Fuzz.intRange 1 10
 
 
 {-| Fuzz a realistic item count. Again, not negative.
 -}
 fuzzCount : Fuzzer Int
 fuzzCount =
-    Fuzz.intRange 0 1000
+    Fuzz.intRange 0 200
+
+
+fuzzEveryDictList : Fuzzer key -> Fuzzer value -> Fuzzer (EveryDictList key value)
+fuzzEveryDictList fuzzKey fuzzValue =
+    Fuzz.map2 (,) fuzzKey fuzzValue
+        |> Fuzz.list
+        |> Fuzz.map EveryDictList.fromList
+
+
+type alias KeyValue =
+    { key : Int
+    , value : Int
+    }
+
+
+fuzzItems : Fuzzer (List KeyValue)
+fuzzItems =
+    Fuzz.map2 KeyValue Fuzz.int Fuzz.int
+        |> Fuzz.list
+
+
+fuzzPage : Fuzzer (RemoteData Int ( EveryDictList Int Int, Int ))
+fuzzPage =
+    Fuzz.map2 (,) (fuzzEveryDictList Fuzz.int Fuzz.int) fuzzCount
+        |> fuzzRemoteData Fuzz.int
+
+
+fuzzRemoteData : Fuzzer err -> Fuzzer value -> Fuzzer (RemoteData err value)
+fuzzRemoteData fuzzErr fuzzValue =
+    Fuzz.oneOf
+        [ Fuzz.constant Loading
+        , Fuzz.constant NotAsked
+        , Fuzz.map Failure fuzzErr
+        , Fuzz.map Success fuzzValue
+        ]
+
+
+type alias FetchedPage =
+    { pageNumber : Int
+    , items : RemoteData Int ( EveryDictList Int Int, Int )
+    }
+
+
+fuzzPages : Fuzzer (List FetchedPage)
+fuzzPages =
+    Fuzz.map2 FetchedPage fuzzPageNumber fuzzPage
+        |> Fuzz.list
+
+
+{-| A basic fuzzer for paginated data.
+
+The pages will vary in page size in a way that is unrealistic, and the
+totalCount won't necessarily be sensible in relation to the pages, but it
+should do for now. (Especially since we don't prevent clients from doing this
+either).
+
+-}
+fuzzPaginatedData : Fuzzer (PaginatedData Int Int Int)
+fuzzPaginatedData =
+    Fuzz.map2
+        (\locals pages ->
+            let
+                withLocals =
+                    List.foldl
+                        (\{ key, value } data ->
+                            insertLocal key value data
+                        )
+                        emptyPaginatedData
+                        locals
+            in
+            List.foldl
+                (\{ pageNumber, items } data ->
+                    handleFetchedPage pageNumber items data
+                )
+                withLocals
+                pages
+        )
+        fuzzItems
+        fuzzPages
 
 
 testFetchNextPage : Test
 testFetchNextPage =
     describe "fetchNextPage"
-        [ fuzz fuzzPage "If empty, should fetch whatever page we ask for" <|
+        [ fuzz fuzzPageNumber "If empty, should fetch whatever page we ask for" <|
             \current ->
                 fetchNextPage current emptyPaginatedData
                     |> Expect.equal [ current ]
@@ -90,9 +169,9 @@ testGet =
                 emptyPaginatedData
                     |> get key
                     |> Expect.equal Nothing
-        , fuzz2 Fuzz.int Fuzz.string "Getting something you just put into a pager should return it" <|
-            \key value ->
-                emptyPaginatedData
+        , fuzz3 Fuzz.int Fuzz.int fuzzPaginatedData "Getting something you just put into a pager should return it" <|
+            \key value data ->
+                data
                     |> insertLocal key value
                     |> get key
                     |> Expect.equal (Just value)
@@ -174,13 +253,13 @@ testRemove =
 testGetPage : Test
 testGetPage =
     describe "getPage"
-        [ fuzz fuzzPage "Getting any page from an empty pager should be NotAsked" <|
+        [ fuzz fuzzPageNumber "Getting any page from an empty pager should be NotAsked" <|
             \page ->
                 getPage page emptyPaginatedData
                     |> Expect.equal NotAsked
-        , test "Getting an existing page should work" <|
-            \_ ->
-                emptyPaginatedData
+        , fuzz fuzzPaginatedData "Getting an existing page should work" <|
+            \data ->
+                data
                     |> handleFetchedPage 1 Loading
                     |> getPage 1
                     |> Expect.equal Loading
@@ -216,9 +295,9 @@ testGetTotalCount =
 
 testSetTotalCount : Test
 testSetTotalCount =
-    fuzz (Fuzz.maybe fuzzCount) "Setting the total count should work" <|
-        \count ->
-            emptyPaginatedData
+    fuzz2 (Fuzz.maybe fuzzCount) fuzzPaginatedData "Setting the total count should work" <|
+        \count data ->
+            data
                 |> setTotalCount count
                 |> getTotalCount
                 |> Expect.equal count
@@ -226,9 +305,9 @@ testSetTotalCount =
 
 testSetPageAsLoading : Test
 testSetPageAsLoading =
-    fuzz fuzzPage "Setting any page as loading should work" <|
-        \page ->
-            emptyPaginatedData
+    fuzz2 fuzzPageNumber fuzzPaginatedData "Setting any page as loading should work" <|
+        \page data ->
+            data
                 |> setPageAsLoading page
                 |> getPage page
                 |> Expect.equal Loading
@@ -237,11 +316,11 @@ testSetPageAsLoading =
 testHandleFetchedPage : Test
 testHandleFetchedPage =
     describe "handleFetchedPage"
-        [ test "Indicating that a page has Failed should work" <|
-            \_ ->
+        [ fuzz2 fuzzPageNumber fuzzPaginatedData "Indicating that a page has Failed should work" <|
+            \pageNumber data ->
                 emptyPaginatedData
-                    |> handleFetchedPage 1 (Failure Http.Timeout)
-                    |> getPage 1
+                    |> handleFetchedPage pageNumber (Failure Http.Timeout)
+                    |> getPage pageNumber
                     |> Expect.equal (Failure Http.Timeout)
         ]
 
