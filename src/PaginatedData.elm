@@ -52,6 +52,7 @@ import RemoteData exposing (RemoteData(..))
 
 {-| Represents the status of paged data, where we may have some or all of the
 pages, and requests for one or more pages may be in-flight or have had errors.
+You may also have some "local" data which is not on any page.
 
 The `value` is the type of the value that you are fetching in pages.
 
