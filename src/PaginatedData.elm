@@ -69,17 +69,17 @@ is a convenient alias for that common case.
 -}
 type PaginatedData err key value
     = PaginatedData
-        -- A record representing an attempt to fetch each page. In
-        -- `handleFetchedPage`, we look at the `totalCount` and try to infer the
-        -- page size, so we will actually have a `NotAsked` entry here for
-        -- every page we expect to exist.
-        { pager : Pager err key value
-
-        -- Represents the number of items which we would have once we receive
-        -- all the pages, if we know that. (For instance, the backend might
-        -- tell us how many items there in total are while returning just one
-        -- page). Note that this is the item count, not the page count.
-        , totalCount : Maybe Int
+        -- The first part is a record representing an attempt to fetch each
+        -- page. In `handleFetchedPage`, we look at the `totalCount` and try to
+        -- infer the page size, so we will actually have a `NotAsked` entry
+        -- here for every page we expect to exist.
+        --
+        -- The second part represents the number of items which we would have
+        -- once we receive all the pages, if we know that. (For instance, the
+        -- backend might tell us how many items there in total are while
+        -- returning just one page). Note that this is the item count, not the
+        -- page count.
+        { backend : ( Pager err key value, Maybe Int )
 
         -- Local values which were **not** obtained from the backend, and thus
         -- are not on any page. These are not included in the totalCount, since
@@ -105,8 +105,7 @@ requests in progress.
 emptyPaginatedData : PaginatedData err key value
 emptyPaginatedData =
     PaginatedData
-        { pager = Dict.empty
-        , totalCount = Nothing
+        { backend = ( Dict.empty, Nothing )
         , local = EveryDictList.empty
         }
 
@@ -176,13 +175,16 @@ current page and possibly the next page, take a look at `fetchAllPages` instead.
 
 -}
 fetchNextPage : Int -> PaginatedData e k v -> List Int
-fetchNextPage currentPage (PaginatedData { pager }) =
+fetchNextPage currentPage (PaginatedData { backend }) =
     -- Page number should be valid
     if currentPage < 1 then
         []
 
     else
         let
+            pager =
+                Tuple.first backend
+
             currentPageData =
                 Dict.get currentPage pager
                     |> Maybe.withDefault NotAsked
@@ -256,12 +258,13 @@ If you don't want to fetch all the pages at once, take a look at
 
 -}
 fetchAllPages : PaginatedData e k v -> List Int
-fetchAllPages ((PaginatedData { pager }) as data) =
+fetchAllPages ((PaginatedData { backend }) as data) =
     let
         -- Current page is actually the last page that had a successful
         -- response.
         currentPage =
-            pager
+            backend
+                |> Tuple.first
                 |> lastPageWithItems
                 |> Maybe.map Tuple.first
                 |> Maybe.withDefault 1
@@ -302,7 +305,7 @@ get key (PaginatedData data) =
         -- We start by looking in local, and then iterate through
         -- the pages.
         (EveryDictList.get key data.local)
-        data.pager
+        (Tuple.first data.backend)
 
 
 {-| Get all values, whether from a page or local.
@@ -328,7 +331,7 @@ getAll (PaginatedData data) =
                     accum
         )
         data.local
-        data.pager
+        (Tuple.first data.backend)
 
 
 {-| A convenience to map over the pages (i.e. not local values).
@@ -336,7 +339,7 @@ getAll (PaginatedData data) =
 mapPages : (Int -> RemoteData err (EveryDictList key value) -> RemoteData err (EveryDictList key value)) -> PaginatedData err key value -> PaginatedData err key value
 mapPages func (PaginatedData data) =
     PaginatedData
-        { data | pager = Dict.map func data.pager }
+        { data | backend = Tuple.mapFirst (Dict.map func) data.backend }
 
 
 {-| A convenience to map over our local values.
@@ -389,8 +392,10 @@ the first page is page 1).
 
 -}
 getPage : Int -> PaginatedData err key value -> RemoteData err (EveryDictList key value)
-getPage page (PaginatedData { pager }) =
-    Dict.get page pager
+getPage page (PaginatedData { backend }) =
+    backend
+        |> Tuple.first
+        |> Dict.get page
         |> Maybe.withDefault NotAsked
 
 
@@ -409,8 +414,8 @@ If we don't know what the total count is yet, this will be `Nothing`.
 
 -}
 getTotalCount : PaginatedData err key value -> Maybe Int
-getTotalCount (PaginatedData { totalCount }) =
-    totalCount
+getTotalCount (PaginatedData { backend }) =
+    Tuple.second backend
 
 
 {-| Set the total count, in case you need to set it manually.
@@ -433,7 +438,7 @@ Note that this should include only those items that are on pages, not
 setTotalCount : Maybe Int -> PaginatedData err key value -> PaginatedData err key value
 setTotalCount totalCount (PaginatedData data) =
     PaginatedData
-        { data | totalCount = totalCount }
+        { data | backend = Tuple.mapSecond (always totalCount) data.backend }
 
 
 {-| Mark that a request for the specified page (1-based) is currently in progress.
@@ -471,7 +476,9 @@ handleFetchedPage :
 handleFetchedPage pageNumber webdata (PaginatedData existing) =
     let
         pagerWithResponse =
-            Dict.insert pageNumber (RemoteData.map Tuple.first webdata) existing.pager
+            existing.backend
+                |> Tuple.first
+                |> Dict.insert pageNumber (RemoteData.map Tuple.first webdata)
     in
     if pageNumber < 1 then
         -- Page number must be valid
@@ -537,14 +544,13 @@ handleFetchedPage pageNumber webdata (PaginatedData existing) =
                 in
                 PaginatedData
                     { existing
-                        | pager = pagerWithAdjustedPageCount
-                        , totalCount = Just totalCount
+                        | backend = ( pagerWithAdjustedPageCount, Just totalCount )
                     }
 
             _ ->
                 -- In the other cases, we just remember the result of the request.
                 PaginatedData
-                    { existing | pager = pagerWithResponse }
+                    { existing | backend = Tuple.mapFirst (always pagerWithResponse) existing.backend }
 
 
 {-| Insert a value which is not on any page.
@@ -579,8 +585,9 @@ Note that this does not take into account any "local" values.
 
 -}
 viewPager : (Int -> msg) -> Int -> PaginatedData e k v -> Html msg
-viewPager func currentPage (PaginatedData { pager }) =
-    pager
+viewPager func currentPage (PaginatedData { backend }) =
+    backend
+        |> Tuple.first
         |> Dict.keys
         |> List.map
             (\pageNumber ->
