@@ -170,10 +170,41 @@ testFetchAllPages =
                 emptyPaginatedData
                     |> fetchAllPages
                     |> Expect.equal [ 1 ]
+        , test "If the first page is loading, we should do nothing" <|
+            \_ ->
+                emptyPaginatedData
+                    |> setPageAsLoading 1
+                    |> fetchAllPages
+                    |> Expect.equal []
+        , test "If the first page has errored, we should do nothing" <|
+            \_ ->
+                emptyPaginatedData
+                    |> handleFetchedPage 1 (Failure Http.Timeout)
+                    |> fetchAllPages
+                    |> Expect.equal []
         , test "If we have one page, and that's all there is, we should do nothing" <|
             \_ ->
                 emptyPaginatedData
                     |> handleFetchedPage 1 (Success ( keysAndValues, 5 ))
+                    |> fetchAllPages
+                    |> Expect.equal []
+        , test "If there is a second page, we should get it." <|
+            \_ ->
+                emptyPaginatedData
+                    |> handleFetchedPage 1 (Success ( keysAndValues, 10 ))
+                    |> fetchAllPages
+                    |> Expect.equal [ 2 ]
+        , test "We should loop around to page 1 if necessary." <|
+            \_ ->
+                emptyPaginatedData
+                    |> handleFetchedPage 2 (Success ( keysAndValues, 10 ))
+                    |> fetchAllPages
+                    |> Expect.equal [ 1 ]
+        , test "But not if we already have it." <|
+            \_ ->
+                emptyPaginatedData
+                    |> handleFetchedPage 1 (Success ( keysAndValues, 15 ))
+                    |> handleFetchedPage 3 (Success ( keysAndValues, 15 ))
                     |> fetchAllPages
                     |> Expect.equal []
         ]

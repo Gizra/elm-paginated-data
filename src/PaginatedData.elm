@@ -254,11 +254,12 @@ next page, and so on. That's what this function helps with.
     again. We don't help with error recovery here, because that will differ too
     much dependning on your context.
 
-  - If that request succeeds, and you insert the results here, we'll return `[2]`
-    the next time you call this. It will be time to fetch the next page!
+  - If that request succeeds, and you use `handleFetched` to insert the page,
+    we'll return `[2]` the next time you call this. It will be time to fetch the
+    next page!
 
-If you don't want to fetch all the pages at once, take a look at
-`fetchNextPage` instead.
+If you'd like to just fetch a specific page (and possibly just one more), look
+at `fetchNextPage` instead.
 
 -}
 fetchAllPages : PaginatedData e k v -> List Int
