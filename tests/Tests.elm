@@ -324,6 +324,19 @@ testUpdate =
                         [ ( "key", 18 )
                         , ( "key2", 21 )
                         ]
+        , test "In pagers as well" <|
+            \_ ->
+                emptyPaginatedData
+                    |> handleFetchedPage 1 (Success ( page1, 10 ))
+                    |> update "key2" (\value -> value ++ "more")
+                    |> Expect.all
+                        [ \data ->
+                            get "key2" data
+                                |> Expect.equal (Just "value2more")
+                        , \data ->
+                            get "key3" data
+                                |> Expect.equal (Just "value3")
+                        ]
         ]
 
 
