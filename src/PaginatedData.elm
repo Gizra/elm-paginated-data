@@ -60,10 +60,10 @@ The `value` is the type of the value that you are fetching in pages.
 
 The `key` is a type for looking up values. For instance, it might be an ID for
 the values. It is used as the key for `EveryDictList`, so it should be unique,
-and it must have work with `toString` in a way that produces unique results.
+and it must work with `toString` in a way that produces unique results.
 
 The `err` is a type for tracking errors fetching pages. For the usual case
-of Http requests, this will be `Http.Error`. The `PaginatedWebData` type
+of `Http` requests, this will be `Http.Error`. The `PaginatedWebData` type
 is a convenient alias for that common case.
 
 -}
@@ -151,16 +151,20 @@ Say, for instance, that the current page is page 2.
 
   - If you successfully received page 2, and there are more items to fetch,
     you'll get `[3]` back. This indicates that it would be a good idea to
-    fetch page 3 ... the user may want it soon!
+    fetch page 3 ... the user may want it soon! (If there is no page 3, we'll
+    check whether to loop around and fetch page 1).
+
+  - If we have both page 2 and page 3, you'll get `[]` back ... there's
+    nothing to fetch right now.
 
 Presumably you are tracking in your model both the `PaginatedData` and some
-indicatin of which page the user is interested in right now. So, you can call
+indication of which page the user is interested in right now. So, you can call
 this function to help determine what pages you ought to request right now.
 
-When you do issue the requests, it is important to call `setPageLoading` here!
-Otherwise, when you call this function again, you'll be told to fetch the page
-again. If you mark the page as `Loading`, then this function won't tell you to
-load it again.
+When you do issue the requests, it is important to call `setPageLoading` to indicate
+that the page is now loading! Otherwise, when you call this function again,
+you'll be told to fetch the page again. If you mark the page as `Loading`, then
+this function won't tell you to load it again.
 
 Note that this function does not tell you to re-fetch pages that have failed.
 When to do that is very much dependent on your situation, so you'll need to

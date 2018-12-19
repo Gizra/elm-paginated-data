@@ -123,11 +123,17 @@ testFetchNextPage =
             \current ->
                 fetchNextPage current emptyPaginatedData
                     |> Expect.equal [ current ]
+        , test "Should not tell us to fetch negative pages" <|
+            \_ ->
+                emptyPaginatedData
+                    |> fetchNextPage -2
+                    |> Expect.equal []
         , test "If we're loading the current page, should do nothing" <|
             \_ ->
                 emptyPaginatedData
-                    |> setPageAsLoading 1
-                    |> fetchNextPage 1
+                    |> handleFetchedPage 1 (Success ( keysAndValues, 15 ))
+                    |> setPageAsLoading 2
+                    |> fetchNextPage 2
                     |> Expect.equal []
         , test "If we have the current page, and we have no entries for other pages, we should not fetch the next page" <|
             \_ ->
@@ -135,6 +141,18 @@ testFetchNextPage =
                     |> handleFetchedPage 1 (Success ( keysAndValues, 5 ))
                     |> fetchNextPage 1
                     |> Expect.equal []
+        , test "If we have the current page, and we expect the next page, we should fetch it" <|
+            \_ ->
+                emptyPaginatedData
+                    |> handleFetchedPage 1 (Success ( keysAndValues, 10 ))
+                    |> fetchNextPage 1
+                    |> Expect.equal [ 2 ]
+        , test "If we have the last page, and we don't have the first page, we should fetch it" <|
+            \_ ->
+                emptyPaginatedData
+                    |> handleFetchedPage 3 (Success ( keysAndValues, 15 ))
+                    |> fetchNextPage 3
+                    |> Expect.equal [ 1 ]
         , test "If we directly request a page we don't expect to exist, we should get it even if we have other pages" <|
             \_ ->
                 emptyPaginatedData
