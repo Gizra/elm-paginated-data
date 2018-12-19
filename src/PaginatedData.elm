@@ -30,7 +30,7 @@ requests are in flight?
 @docs fetchAllPages, fetchNextPage
 
 
-### Updaters
+### Mutators
 
 @docs insertLocal, handleFetchedPage, remove, setPageAsLoading, setTotalCount, update
 
@@ -52,7 +52,9 @@ import RemoteData exposing (RemoteData(..))
 
 {-| Represents the status of paged data, where we may have some or all of the
 pages, and requests for one or more pages may be in-flight or have had errors.
-You may also have some "local" data which is not on any page.
+You may also have some "local" data which is not on any page. For instance,
+values that may already be saved in the backend, but you didn't re-fetch a list
+of items, thus do not yet know the page those items should belong to.
 
 The `value` is the type of the value that you are fetching in pages.
 
@@ -109,21 +111,6 @@ emptyPaginatedData =
         }
 
 
-{-| Keep the accumulator if it is a `Just`. Otherwise, use the provided `RemoteData`
-if it is a `Success`.
--}
-accumulatorOrItems : Int -> RemoteData err (EveryDictList key value) -> Maybe ( Int, EveryDictList key value ) -> Maybe ( Int, EveryDictList key value )
-accumulatorOrItems page remoteData accum =
-    case accum of
-        Just _ ->
-            accum
-
-        Nothing ->
-            remoteData
-                |> RemoteData.map (\data -> ( page, data ))
-                |> RemoteData.toMaybe
-
-
 {-| An internal function to give us the first page which was successfully
 fetched. We use this, for instance, to infer the page size. We can't infer it
 from the last page, since that might be a partial page.
@@ -138,6 +125,21 @@ firstPageWithItems =
 lastPageWithItems : Pager err key value -> Maybe ( Int, EveryDictList key value )
 lastPageWithItems =
     Dict.foldr accumulatorOrItems Nothing
+
+
+{-| Keep the accumulator if it is a `Just`. Otherwise, use the provided `RemoteData`
+if it is a `Success`.
+-}
+accumulatorOrItems : Int -> RemoteData err (EveryDictList key value) -> Maybe ( Int, EveryDictList key value ) -> Maybe ( Int, EveryDictList key value )
+accumulatorOrItems page remoteData accum =
+    case accum of
+        Just _ ->
+            accum
+
+        Nothing ->
+            remoteData
+                |> RemoteData.map (\data -> ( page, data ))
+                |> RemoteData.toMaybe
 
 
 {-| You supply the current page -- for instance, perhaps the page which the
@@ -175,6 +177,7 @@ current page and possibly the next page, take a look at `fetchAllPages` instead.
 -}
 fetchNextPage : Int -> PaginatedData e k v -> List Int
 fetchNextPage currentPage (PaginatedData { pager }) =
+    -- Page number should be valid
     if currentPage < 1 then
         []
 
@@ -217,18 +220,18 @@ fetchNextPage currentPage (PaginatedData { pager }) =
                         []
 
                     Nothing ->
-                        -- If we don't expect a page to exist here, and this is not
-                        -- the first page, then consider getting page 1.
-                        if currentPage == 1 then
-                            []
+                        -- If we get a Nothing here, it means that we don't
+                        -- expect the next page to exist.  Or, to put it
+                        -- another way, we have the current page, and we think
+                        -- it is the last page. So, we think about asking for
+                        -- page 1 instead.  That way, we'll eventually loop
+                        -- around, even if we didn't start at page 1.
+                        case Dict.get 1 pager of
+                            Just NotAsked ->
+                                [ 1 ]
 
-                        else
-                            case Dict.get 1 pager of
-                                Just NotAsked ->
-                                    [ 1 ]
-
-                                _ ->
-                                    []
+                            _ ->
+                                []
 
 
 {-| Suppose you'd like to fetch all the pages, but just one at a time. You'll
@@ -328,7 +331,7 @@ getAll (PaginatedData data) =
         data.pager
 
 
-{-| A convenience to map over our internal pages.
+{-| A convenience to map over the pages (i.e. not local values).
 -}
 mapPages : (Int -> RemoteData err (EveryDictList key value) -> RemoteData err (EveryDictList key value)) -> PaginatedData err key value -> PaginatedData err key value
 mapPages func (PaginatedData data) =
@@ -470,73 +473,78 @@ handleFetchedPage pageNumber webdata (PaginatedData existing) =
         pagerWithResponse =
             Dict.insert pageNumber (RemoteData.map Tuple.first webdata) existing.pager
     in
-    case webdata of
-        Success ( items, totalCount ) ->
-            let
-                -- This should be accurate unless we only have the last page.
-                -- If we have only one page, it's not in general possible to
-                -- figure out whether it's the last page, unless we already
-                -- know the page size (which is what we're trying to figure out
-                -- here).
-                pageSize =
-                    firstPageWithItems pagerWithResponse
-                        |> Maybe.map (Tuple.second >> EveryDictList.size)
+    if pageNumber < 1 then
+        -- Page number must be valid
+        PaginatedData existing
 
-                lastPageNumber =
-                    -- For example if we have 120 items, and we got 25 items
-                    -- back it means there will be 5 pages.
-                    Maybe.map
-                        (\size ->
-                            -- If we're asking for the first page and it has no
-                            -- items, then we do want to keep a record of
-                            -- having requested the one page. And, avoid
-                            -- dividing by zero!
-                            if size == 0 then
-                                1
+    else
+        case webdata of
+            Success ( items, totalCount ) ->
+                let
+                    -- This should be accurate unless we only have the last page.
+                    -- If we have only one page, it's not in general possible to
+                    -- figure out whether it's the last page, unless we already
+                    -- know the page size (which is what we're trying to figure out
+                    -- here).
+                    pageSize =
+                        firstPageWithItems pagerWithResponse
+                            |> Maybe.map (Tuple.second >> EveryDictList.size)
 
-                            else
-                                ceiling (toFloat totalCount / toFloat size)
-                        )
-                        pageSize
+                    lastPageNumber =
+                        -- For example if we have 120 items, and we got 25 items
+                        -- back it means there will be 5 pages.
+                        Maybe.map
+                            (\size ->
+                                -- If we're asking for the first page and it has no
+                                -- items, then we do want to keep a record of
+                                -- having requested the one page. And, avoid
+                                -- dividing by zero!
+                                if size == 0 then
+                                    1
 
-                pagerWithAdjustedPageCount =
-                    case lastPageNumber of
-                        Nothing ->
-                            pagerWithResponse
+                                else
+                                    ceiling (toFloat totalCount / toFloat size)
+                            )
+                            pageSize
 
-                        Just lastPage ->
-                            let
-                                pagerWithoutNonexistentPages =
-                                    Dict.filter
-                                        (\page data ->
-                                            -- We'll keep pages if they are
-                                            -- within our total pages, or if
-                                            -- they have data.
-                                            page <= lastPage || RemoteData.isSuccess data
-                                        )
-                                        pagerWithResponse
+                    pagerWithAdjustedPageCount =
+                        case lastPageNumber of
+                            Nothing ->
+                                pagerWithResponse
 
-                                allNotAsked =
-                                    List.range 1 lastPage
-                                        |> List.map (\page -> ( page, NotAsked ))
-                                        |> Dict.fromList
-                            in
-                            -- `union` prefers the first argument. So,
-                            -- basically, we're providing `NotAsked` as the
-                            -- defaults where we don't have an entry for a
-                            -- page yet.
-                            Dict.union pagerWithoutNonexistentPages allNotAsked
-            in
-            PaginatedData
-                { existing
-                    | pager = pagerWithAdjustedPageCount
-                    , totalCount = Just totalCount
-                }
+                            Just lastPage ->
+                                let
+                                    pagerWithoutNonexistentPages =
+                                        Dict.filter
+                                            (\page data ->
+                                                -- We'll keep pages if they are
+                                                -- within our total pages, or if
+                                                -- they have data.
+                                                page <= lastPage || RemoteData.isSuccess data
+                                            )
+                                            pagerWithResponse
 
-        _ ->
-            -- In the other cases, we just remember the result of the request.
-            PaginatedData
-                { existing | pager = pagerWithResponse }
+                                    allNotAsked =
+                                        List.range 1 lastPage
+                                            |> List.map (\page -> ( page, NotAsked ))
+                                            |> Dict.fromList
+                                in
+                                -- `union` prefers the first argument. So,
+                                -- basically, we're providing `NotAsked` as the
+                                -- defaults where we don't have an entry for a
+                                -- page yet.
+                                Dict.union pagerWithoutNonexistentPages allNotAsked
+                in
+                PaginatedData
+                    { existing
+                        | pager = pagerWithAdjustedPageCount
+                        , totalCount = Just totalCount
+                    }
+
+            _ ->
+                -- In the other cases, we just remember the result of the request.
+                PaginatedData
+                    { existing | pager = pagerWithResponse }
 
 
 {-| Insert a value which is not on any page.
