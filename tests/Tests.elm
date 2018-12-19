@@ -131,32 +131,32 @@ testFetchNextPage =
         , test "If we're loading the current page, should do nothing" <|
             \_ ->
                 emptyPaginatedData
-                    |> handleFetchedPage 1 (Success ( keysAndValues, 15 ))
+                    |> handleFetchedPage 1 (Success ( page1, 15 ))
                     |> setPageAsLoading 2
                     |> fetchNextPage 2
                     |> Expect.equal []
         , test "If we have the current page, and we have no entries for other pages, we should not fetch the next page" <|
             \_ ->
                 emptyPaginatedData
-                    |> handleFetchedPage 1 (Success ( keysAndValues, 5 ))
+                    |> handleFetchedPage 1 (Success ( page1, 5 ))
                     |> fetchNextPage 1
                     |> Expect.equal []
         , test "If we have the current page, and we expect the next page, we should fetch it" <|
             \_ ->
                 emptyPaginatedData
-                    |> handleFetchedPage 1 (Success ( keysAndValues, 10 ))
+                    |> handleFetchedPage 1 (Success ( page1, 10 ))
                     |> fetchNextPage 1
                     |> Expect.equal [ 2 ]
         , test "If we have the last page, and we don't have the first page, we should fetch it" <|
             \_ ->
                 emptyPaginatedData
-                    |> handleFetchedPage 3 (Success ( keysAndValues, 15 ))
+                    |> handleFetchedPage 3 (Success ( page1, 15 ))
                     |> fetchNextPage 3
                     |> Expect.equal [ 1 ]
         , test "If we directly request a page we don't expect to exist, we should get it even if we have other pages" <|
             \_ ->
                 emptyPaginatedData
-                    |> handleFetchedPage 1 (Success ( keysAndValues, 5 ))
+                    |> handleFetchedPage 1 (Success ( page1, 5 ))
                     |> fetchNextPage 2
                     |> Expect.equal [ 2 ]
         ]
@@ -185,26 +185,26 @@ testFetchAllPages =
         , test "If we have one page, and that's all there is, we should do nothing" <|
             \_ ->
                 emptyPaginatedData
-                    |> handleFetchedPage 1 (Success ( keysAndValues, 5 ))
+                    |> handleFetchedPage 1 (Success ( page1, 5 ))
                     |> fetchAllPages
                     |> Expect.equal []
         , test "If there is a second page, we should get it." <|
             \_ ->
                 emptyPaginatedData
-                    |> handleFetchedPage 1 (Success ( keysAndValues, 10 ))
+                    |> handleFetchedPage 1 (Success ( page1, 10 ))
                     |> fetchAllPages
                     |> Expect.equal [ 2 ]
         , test "We should loop around to page 1 if necessary." <|
             \_ ->
                 emptyPaginatedData
-                    |> handleFetchedPage 2 (Success ( keysAndValues, 10 ))
+                    |> handleFetchedPage 2 (Success ( page1, 10 ))
                     |> fetchAllPages
                     |> Expect.equal [ 1 ]
         , test "But not if we already have it." <|
             \_ ->
                 emptyPaginatedData
-                    |> handleFetchedPage 1 (Success ( keysAndValues, 15 ))
-                    |> handleFetchedPage 3 (Success ( keysAndValues, 15 ))
+                    |> handleFetchedPage 1 (Success ( page1, 15 ))
+                    |> handleFetchedPage 3 (Success ( page2, 15 ))
                     |> fetchAllPages
                     |> Expect.equal []
         ]
@@ -218,12 +218,18 @@ testGet =
                 emptyPaginatedData
                     |> get key
                     |> Expect.equal Nothing
-        , fuzz3 Fuzz.int Fuzz.int fuzzPaginatedData "Getting something you just put into a pager should return it" <|
+        , fuzz3 Fuzz.int Fuzz.int fuzzPaginatedData "Getting something you just inserted locally should return it" <|
             \key value data ->
                 data
                     |> insertLocal key value
                     |> get key
                     |> Expect.equal (Just value)
+        , test "And getting something you inserted on a page should work" <|
+            \_ ->
+                emptyPaginatedData
+                    |> handleFetchedPage 1 (Success ( page1, 15 ))
+                    |> get "key1"
+                    |> Expect.equal (Just "value1")
         ]
 
 
@@ -246,6 +252,52 @@ testGetAll =
                     |> Expect.equal
                         [ ( "key", "value" )
                         , ( "key2", "value2" )
+                        ]
+        , test "Order should be by page, and then locals" <|
+            \_ ->
+                emptyPaginatedData
+                    |> insertLocal "localKey1" "localValue1"
+                    |> insertLocal "localKey2" "localValue2"
+                    |> handleFetchedPage 1 (Success ( page1, 10 ))
+                    |> handleFetchedPage 2 (Success ( page2, 10 ))
+                    |> getAll
+                    |> EveryDictList.toList
+                    |> Expect.equal
+                        [ ( "key1", "value1" )
+                        , ( "key2", "value2" )
+                        , ( "key3", "value3" )
+                        , ( "key4", "value4" )
+                        , ( "key5", "value5" )
+                        , ( "key6", "value6" )
+                        , ( "key7", "value7" )
+                        , ( "key8", "value8" )
+                        , ( "key9", "value9" )
+                        , ( "key10", "value10" )
+                        , ( "localKey1", "localValue1" )
+                        , ( "localKey2", "localValue2" )
+                        ]
+        , test "Even if pages arrive in different order" <|
+            \_ ->
+                emptyPaginatedData
+                    |> handleFetchedPage 2 (Success ( page2, 10 ))
+                    |> handleFetchedPage 1 (Success ( page1, 10 ))
+                    |> insertLocal "localKey1" "localValue1"
+                    |> insertLocal "localKey2" "localValue2"
+                    |> getAll
+                    |> EveryDictList.toList
+                    |> Expect.equal
+                        [ ( "key1", "value1" )
+                        , ( "key2", "value2" )
+                        , ( "key3", "value3" )
+                        , ( "key4", "value4" )
+                        , ( "key5", "value5" )
+                        , ( "key6", "value6" )
+                        , ( "key7", "value7" )
+                        , ( "key8", "value8" )
+                        , ( "key9", "value9" )
+                        , ( "key10", "value10" )
+                        , ( "localKey1", "localValue1" )
+                        , ( "localKey2", "localValue2" )
                         ]
         ]
 
@@ -315,14 +367,25 @@ testGetPage =
         ]
 
 
-keysAndValues : EveryDictList String String
-keysAndValues =
+page1 : EveryDictList String String
+page1 =
     EveryDictList.fromList
         [ ( "key1", "value1" )
         , ( "key2", "value2" )
         , ( "key3", "value3" )
         , ( "key4", "value4" )
         , ( "key5", "value5" )
+        ]
+
+
+page2 : EveryDictList String String
+page2 =
+    EveryDictList.fromList
+        [ ( "key6", "value6" )
+        , ( "key7", "value7" )
+        , ( "key8", "value8" )
+        , ( "key9", "value9" )
+        , ( "key10", "value10" )
         ]
 
 
@@ -336,7 +399,7 @@ testGetTotalCount =
         , test "Total count of a pager with a few values should work" <|
             \_ ->
                 emptyPaginatedData
-                    |> handleFetchedPage 1 (Success ( keysAndValues, 10 ))
+                    |> handleFetchedPage 1 (Success ( page1, 10 ))
                     |> getTotalCount
                     |> Expect.equal (Just 10)
         ]
@@ -407,8 +470,8 @@ testGetItemsByPage =
         , test "Single page" <|
             \_ ->
                 emptyPaginatedData
-                    |> handleFetchedPage 1 (Success ( keysAndValues, 10 ))
+                    |> handleFetchedPage 1 (Success ( page1, 10 ))
                     |> getItemsByPage 1
                     |> EveryDictList.toList
-                    |> Expect.equal (EveryDictList.toList keysAndValues)
+                    |> Expect.equal (EveryDictList.toList page1)
         ]
